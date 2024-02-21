@@ -1,66 +1,125 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
 
-import {OAppReceiver, Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppReceiver.sol";
-import {OAppCore, Ownable} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppCore.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {OApp, Origin, MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IGaugeController, VoteParams, PullParams} from "../../interfaces/IGaugeController.sol";
+import {ISykLzAdapter, SendParams} from "../../interfaces/ISykLzAdapter.sol";
+import {IXSykStaking} from "../../interfaces/IXSykStaking.sol";
+
+import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {OApp, Origin, MessagingFee} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
-import {IGaugeController, VoteParams, PullParams} from "../../interfaces/IGaugeController.sol";
-import {Test, console} from "forge-std/Test.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
-import {SykLzAdapter, SendParams} from "../../token/bridge-adapters/SykLzAdapter.sol";
-import {XSykStaking} from "../XSykStaking.sol";
-
+/// @title XSykStakingLzAdapter Contract
+/// @notice This contract facilitates staking, unstaking, claiming rewards, and exiting for xSYK tokens through LayerZero messaging.
 contract XSykStakingLzAdapter is OApp {
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
 
-    address public immutable xSykStaking;
+    /*==== STATE VARIABLES ====*/
 
-    address public immutable xSyk;
+    /// @notice XSykStaking contract
+    IXSykStaking public immutable xSykStaking;
 
-    address public immutable syk;
+    /// @notice xSYK contract
+    IERC20 public immutable xSyk;
 
-    address public immutable sykLzAdapter;
-
-    uint32 public immutable dstEid;
+    /// @notice SYK Bridge Adapter contract
+    ISykLzAdapter public immutable sykLzAdapter;
 
     /// @notice xSYK reward conversion percentage.
     uint256 public xSykRewardPercentage;
 
+    /// @notice Destination LayerZero endpoint ID of the chain where the XSykStaking contract is deployed
+    uint32 public immutable dstEid;
+
+    /// @notice Stake type in uint8
     uint8 public constant STAKE_TYPE = 1;
+
+    /// @notice Unstake type in uint8
     uint8 public constant UNSTAKE_TYPE = 2;
+
+    /// @notice Claim type in uint8
     uint8 public constant CLAIM_TYPE = 3;
+
+    /// @notice Exit type in uint8
     uint8 public constant EXIT_TYPE = 4;
 
+    /// @notice account => balance
     mapping(address => uint256) public balanceOf;
+
+    /*==== EVENTS ====*/
 
     /// @notice Emitted when the xSYK reward conversion percentage is updated.
     /// @param xSykRewardPercentage The percentage of SYK rewards to be sent in xSYK
     event XSykRewardPercentageUpdated(uint256 xSykRewardPercentage);
 
+    /// @dev Emitted when tokens are staked in the contract.
+    /// @notice This event is fired whenever a user stakes tokens, indicating the amount staked.
+    /// @param account The address of the account that staked tokens.
+    /// @param amount The amount of tokens that were staked by the account.
+    /// @param msgReceipt The receipt of the LZ message
+    event Staked(address indexed account, uint256 amount, MessagingReceipt msgReceipt);
+
+    /// @dev Emitted when staked tokens are withdrawn (unstaked) from the contract.
+    /// @notice This event is fired whenever a user unstakes tokens, indicating the amount unstaked.
+    /// @param account The address of the account that unstaked tokens.
+    /// @param amount The amount of tokens that were unstaked by the account.
+    /// @param msgReceipt The receipt of the LZ message
+    event Unstaked(address indexed account, uint256 amount, MessagingReceipt msgReceipt);
+
+    /// @dev Emitted when rewards are claimed by a staker.
+    /// @notice This event is fired whenever a user claims their staking rewards, indicating the amount claimed.
+    /// @param account The address of the account that claimed rewards.
+    /// @param msgReceipt The receipt of the LZ message
+    event Claimed(address indexed account, MessagingReceipt msgReceipt);
+
+    /// @dev Emitted when an account is exiting the staking pool.
+    /// @param account The address of the account that is exiting.
+    /// @param amount The amount of balance that was withdrawn.
+    /// @param msgReceipt The receipt of the LZ message
+    event Exit(address indexed account, uint256 amount, MessagingReceipt msgReceipt);
+
+    /// @dev Emitted when this contract receives a message via LayerZero.
+    /// @param messageType Message type (stake, unstake, claim, exit).
+    /// @param amount Amount to stake or unstake, 0 for claim and exit.
+    /// @param account Address of the account.
+    /// @param guid Identifier for the LayerZero message.
+    /// @param srcEid Source Endpoint ID.
+    event MessageReceived(uint8 messageType, uint256 amount, address account, bytes32 guid, uint32 srcEid);
+
+    /*==== ERRORS ====*/
+
+    /// @dev Indicates an operation was attempted with an insufficient token balance.
     error InsufficientBalance();
 
+    /// @dev Indicates an attempt to perform an operation without a corresponding staked amount.
     error NoStakedAmountFound();
 
+    /// @notice Constructor
+    /// @param _endpoint Address of the LayerZero endpoint for this chain.
+    /// @param _owner Address of the contract owner.
+    /// @param _xSykStaking Address of the XSykStaking contract.
+    /// @param _xSyk Address of the xSYK token contract.
+    /// @param _sykLzAdapter Address of the SykLzAdapter for cross-chain communication.
+    /// @param _dstEid Destination LayerZero endpoint ID of the chain where the XSykStaking contract is deployed
     constructor(
         address _endpoint,
         address _owner,
         address _xSykStaking,
         address _xSyk,
-        address _syk,
         address _sykLzAdapter,
         uint32 _dstEid
     ) OApp(_endpoint, _owner) Ownable(_owner) {
-        xSykStaking = _xSykStaking;
-        xSyk = _xSyk;
-        syk = _syk;
-        sykLzAdapter = _sykLzAdapter;
+        xSykStaking = IXSykStaking(_xSykStaking);
+        xSyk = IERC20(_xSyk);
+        sykLzAdapter = ISykLzAdapter(_sykLzAdapter);
         dstEid = _dstEid;
     }
+
+    /*==== RESTRICTED FUNCTIONS ====*/
 
     /// @notice Updates xSYK reward conversion percentage.
     /// @dev Restricted to contract administrators.
@@ -71,68 +130,103 @@ contract XSykStakingLzAdapter is OApp {
         emit XSykRewardPercentageUpdated(_xSykRewardPercentage);
     }
 
-    function stake(uint256 _amount, bytes calldata _options) external payable {
-        uint256 balance = IERC20Metadata(xSyk).balanceOf(msg.sender);
+    /*==== PUBLIC FUNCTIONS ====*/
+
+    /// @notice Allows users to stake xSYK tokens and triggers a cross-chain message to the destination chain.
+    /// @param _amount The amount of xSYK tokens to stake.
+    /// @param _options LayerZero message options for cross-chain communication.
+    /// @return msgReceipt The receipt of the LayerZero message.
+    function stake(uint256 _amount, bytes calldata _options)
+        external
+        payable
+        returns (MessagingReceipt memory msgReceipt)
+    {
+        uint256 balance = xSyk.balanceOf(msg.sender);
 
         if (balance < _amount) {
             revert InsufficientBalance();
         }
 
-        IERC20(xSyk).safeTransferFrom(msg.sender, address(this), _amount);
+        xSyk.safeTransferFrom(msg.sender, address(this), _amount);
 
         balanceOf[msg.sender] += _amount;
 
         bytes memory payload = abi.encode(STAKE_TYPE, _amount, msg.sender);
 
-        // TODO: CHECK RETRY MECHANISM
-        _lzSend(
+        msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             _options, // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
+
+        emit Staked(msg.sender, _amount, msgReceipt);
     }
 
-    function unstake(uint256 _amount, bytes calldata _options) external payable {
+    /// @notice Allows users to unstake xSYK tokens and triggers a cross-chain message to the destination chain.
+    /// @param _amount The amount of xSYK tokens to unstake.
+    /// @param _options LayerZero message options for cross-chain communication.
+    /// @return msgReceipt The receipt of the LayerZero message.
+    function unstake(uint256 _amount, bytes calldata _options)
+        external
+        payable
+        returns (MessagingReceipt memory msgReceipt)
+    {
         _unstake(msg.sender, _amount);
 
         bytes memory payload = abi.encode(UNSTAKE_TYPE, _amount, msg.sender);
 
-        _lzSend(
+        msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             _options, // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
+
+        emit Unstaked(msg.sender, _amount, msgReceipt);
     }
 
-    function claim(bytes calldata _options) external payable {
+    /// @notice Allows users to claim their rewards, triggering a cross-chain message to handle the reward distribution.
+    /// @param _options LayerZero message options for cross-chain communication.
+    /// @return msgReceipt The receipt of the LayerZero message.
+    function claim(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt) {
         bytes memory payload = abi.encode(CLAIM_TYPE, 0, msg.sender);
 
-        _lzSend(
+        msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             _options, // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
+
+        emit Claimed(msg.sender, msgReceipt);
     }
 
-    function exit(bytes calldata _options) external payable {
+    /// @notice Allows users to exit the staking pool, unstaking their tokens and claiming any rewards in a single transaction.
+    /// @param _options LayerZero message options for cross-chain communication.
+    /// @return msgReceipt The receipt of the LayerZero message.
+    function exit(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt) {
+        uint256 accountBalance = balanceOf[msg.sender];
+
         _unstake(msg.sender, balanceOf[msg.sender]);
 
         bytes memory payload = abi.encode(EXIT_TYPE, 0, msg.sender);
 
-        _lzSend(
+        msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             _options, // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
+
+        emit Exit(msg.sender, accountBalance, msgReceipt);
     }
+
+    /*==== INTERNAL FUNCTIONS ====*/
 
     function _lzReceive(Origin calldata _origin, bytes32 _guid, bytes calldata _message, address, bytes calldata)
         internal
@@ -140,18 +234,20 @@ contract XSykStakingLzAdapter is OApp {
     {
         (uint8 MSG_TYPE, uint256 _amount, address _account) = abi.decode(_message, (uint8, uint256, address));
         if (MSG_TYPE == 1) {
-            XSykStaking(xSykStaking).stake(_amount, _account);
+            xSykStaking.stake(_amount, _account);
         } else if (MSG_TYPE == 2) {
-            XSykStaking(xSykStaking).unstake(_amount, _account);
+            xSykStaking.unstake(_amount, _account);
         } else if (MSG_TYPE == 3) {
-            uint256 reward = XSykStaking(xSykStaking).claim(_account);
+            uint256 reward = xSykStaking.claim(_account);
             uint256 xSykReward = (reward * xSykRewardPercentage) / 100;
             _sendSyk(_origin.srcEid, reward, xSykReward, _account);
         } else if (MSG_TYPE == 4) {
-            (, uint256 reward) = XSykStaking(xSykStaking).exit(_account);
+            (, uint256 reward) = xSykStaking.exit(_account);
             uint256 xSykReward = (reward * xSykRewardPercentage) / 100;
             _sendSyk(_origin.srcEid, reward, xSykReward, _account);
         }
+
+        emit MessageReceived(MSG_TYPE, _amount, _account, _guid, _origin.srcEid);
     }
 
     function _unstake(address _account, uint256 _amount) private {
@@ -161,7 +257,7 @@ contract XSykStakingLzAdapter is OApp {
             revert InsufficientBalance();
         }
 
-        IERC20(xSyk).safeTransfer(_account, _amount);
+        xSyk.safeTransfer(_account, _amount);
 
         balanceOf[_account] -= _amount;
     }
@@ -172,18 +268,10 @@ contract XSykStakingLzAdapter is OApp {
         SendParams memory sendParams =
             SendParams({dstEid: _dstEid, to: _to, amount: _amount, options: options, xSykAmount: _xSykAmount});
 
-        MessagingFee memory msgFee = SykLzAdapter(sykLzAdapter).quoteSend(sendParams, false);
+        MessagingFee memory msgFee = sykLzAdapter.quoteSend(sendParams, false);
 
         // The msg.value should include any the fees to bridge back the SYK, incase the msg.value is not enough, this contract can store funds in order to prevent any failures
-        SykLzAdapter(sykLzAdapter).send{value: msgFee.nativeFee}(sendParams, msgFee, address(this));
-    }
-
-    function addressToBytes32(address _addr) internal pure returns (bytes32) {
-        return bytes32(uint256(uint160(_addr)));
-    }
-
-    function bytes32ToAddress(bytes32 _bytes) internal pure returns (address) {
-        return address(uint160(uint256(_bytes)));
+        sykLzAdapter.send{value: msgFee.nativeFee}(sendParams, msgFee, address(this));
     }
 
     // be able to receive ether

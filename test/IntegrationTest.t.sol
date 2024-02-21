@@ -163,18 +163,11 @@ contract IntegrationTest is Test {
             address(this),
             address(xSykStaking),
             address(xSykRoot),
-            address(sykRoot),
             address(sykLzAdapterRoot),
             30110
         );
         xSykStakingLzAdapterBsc = new XSykStakingLzAdapter(
-            address(bscEndpoint),
-            address(this),
-            address(0),
-            address(xSykBsc),
-            address(sykBsc),
-            address(sykLzAdapterBsc),
-            30110
+            address(bscEndpoint), address(this), address(0), address(xSykBsc), address(sykLzAdapterBsc), 30110
         );
 
         gaugeControllerLzAdapterRoot = new GaugeControllerLzAdapter(
@@ -182,7 +175,6 @@ contract IntegrationTest is Test {
             address(this),
             address(gaugeController),
             address(xSykRoot),
-            address(sykRoot),
             address(sykLzAdapterRoot),
             address(0),
             30110
@@ -193,7 +185,6 @@ contract IntegrationTest is Test {
             address(this),
             address(gaugeController),
             address(xSykBsc),
-            address(0),
             address(0),
             address(xSykStakingLzAdapterBsc),
             30110

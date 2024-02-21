@@ -29,6 +29,8 @@ contract XStrykeToken is
 {
     using SafeERC20 for IStrykeTokenBase;
 
+    /*==== STATE VARIABLES ====*/
+
     /// @notice Address of the underlying SYK token.
     IStrykeTokenBase public syk;
 
