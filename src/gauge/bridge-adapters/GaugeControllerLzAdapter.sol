@@ -7,6 +7,7 @@ import {OApp, Origin, MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-ev
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ISykLzAdapter, SendParams} from "../../interfaces/ISykLzAdapter.sol";
 import {IGaugeController, VoteParams, PullParams} from "../../interfaces/IGaugeController.sol";
+import {IXSykStakingLzAdapter} from "../../interfaces/IXSykStakingLzAdapter.sol";
 
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 
@@ -26,7 +27,7 @@ contract GaugeControllerLzAdapter is OApp {
     ISykLzAdapter public immutable sykLzAdapter;
 
     /// @notice Address of the LayerZero adapter for the xSyk staking contract.
-    address public immutable xSykStakingLzAdapter;
+    IXSykStakingLzAdapter public immutable xSykStakingLzAdapter;
 
     /// @notice Destination endpoint ID for cross-chain messages.
     uint32 public immutable dstEid;
@@ -48,7 +49,7 @@ contract GaugeControllerLzAdapter is OApp {
     event MessageReceived(bytes message, bytes32 guid, uint32 srcEid);
 
     /// @dev Thrown when a user attempts to vote with more power than available.
-    error NotEnoughPowerAvailable();
+    error GaugeControllerLzAdapter_NotEnoughPowerAvailable();
 
     /// @dev Constructor.
     /// @param _endpoint Address of the LayerZero endpoint contract.
@@ -70,7 +71,7 @@ contract GaugeControllerLzAdapter is OApp {
         gaugeController = IGaugeController(_gaugeController);
         xSyk = IERC20(_xSyk);
         sykLzAdapter = ISykLzAdapter(_sykLzAdapter);
-        xSykStakingLzAdapter = _xSykStakingLzAdapter;
+        xSykStakingLzAdapter = IXSykStakingLzAdapter(_xSykStakingLzAdapter);
         dstEid = _dstEid;
     }
 
@@ -87,10 +88,10 @@ contract GaugeControllerLzAdapter is OApp {
         // Check xSYK balance of the user
         uint256 totalPower = xSyk.balanceOf(msg.sender);
         // Check the xSYK staked balance of the user on staking adapter
-        totalPower += IERC20(xSykStakingLzAdapter).balanceOf(msg.sender);
+        totalPower += xSykStakingLzAdapter.balanceOf(msg.sender);
 
         if (totalPower < _power) {
-            revert NotEnoughPowerAvailable();
+            revert GaugeControllerLzAdapter_NotEnoughPowerAvailable();
         }
 
         VoteParams memory voteParams = VoteParams({

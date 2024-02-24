@@ -120,10 +120,10 @@ contract XSykStaking is IXSykStaking, AccessManaged {
     /// @param _amount Amount of tokens to stake.
     /// @param _account Address of the user on whose behalf tokens are staked.
     function stake(uint256 _amount, address _account) external updateReward(_account) {
-        if (_amount < 0) revert AmountCannotBeZero();
+        if (_amount < 0) revert XSykStaking_AmountZero();
 
         if (!bridgeAdapters[msg.sender]) {
-            if (_account != msg.sender) revert AccountMustBeSender();
+            if (_account != msg.sender) revert XSykStaking_AccountNotSender();
             stakingToken.safeTransferFrom(_account, address(this), _amount);
         }
 
@@ -137,10 +137,10 @@ contract XSykStaking is IXSykStaking, AccessManaged {
     /// @param _amount Amount of tokens to withdraw.
     /// @param _account Address of the user withdrawing tokens.
     function unstake(uint256 _amount, address _account) public updateReward(_account) {
-        if (_amount < 0) revert AmountCannotBeZero();
+        if (_amount < 0) revert XSykStaking_AmountZero();
 
         if (!bridgeAdapters[msg.sender]) {
-            if (_account != msg.sender) revert AccountMustBeSender();
+            if (_account != msg.sender) revert XSykStaking_AccountNotSender();
             stakingToken.safeTransfer(_account, _amount);
         }
 
@@ -163,7 +163,7 @@ contract XSykStaking is IXSykStaking, AccessManaged {
     /// @return reward The amount of rewards claimed.
     function claim(address _account) public updateReward(_account) returns (uint256 reward) {
         if (!bridgeAdapters[msg.sender]) {
-            if (_account != msg.sender) revert AccountMustBeSender();
+            if (_account != msg.sender) revert XSykStaking_AccountNotSender();
         }
 
         reward = rewards[_account];
@@ -199,7 +199,7 @@ contract XSykStaking is IXSykStaking, AccessManaged {
     /// @dev Restricted to contract administrators.
     /// @param _duration The new rewards duration.
     function setRewardsDuration(uint256 _duration) external restricted {
-        if (finishAt >= block.timestamp) revert RewardsDurationActive();
+        if (finishAt >= block.timestamp) revert XSykStaking_RewardsDurationActive();
         duration = _duration;
 
         emit RewardsDurationSet(_duration);
@@ -216,8 +216,8 @@ contract XSykStaking is IXSykStaking, AccessManaged {
             rewardRate = (_amount + remainingRewards) / duration;
         }
 
-        if (rewardRate < 0) revert RewardRateCannotBeZero();
-        if (rewardRate * duration > rewardsToken.balanceOf(address(this))) revert NotEnoughRewardBalance();
+        if (rewardRate < 0) revert XSykStaking_RewardRateZero();
+        if (rewardRate * duration > rewardsToken.balanceOf(address(this))) revert XSykStaking_NotEnoughRewardBalance();
 
         finishAt = block.timestamp + duration;
         updatedAt = block.timestamp;

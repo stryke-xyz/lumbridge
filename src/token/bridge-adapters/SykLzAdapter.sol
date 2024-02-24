@@ -57,7 +57,7 @@ contract SykLzAdapter is ISykLzAdapter, OApp {
         payable
         returns (MessagingReceipt memory msgReceipt)
     {
-        if (_sendParams.amount < _sendParams.xSykAmount) revert InvalidAmounts();
+        if (_sendParams.amount < _sendParams.xSykAmount) revert SykLzAdapter_InvalidAmount();
 
         // Burns SYK via the BridgeController
         _debit(_sendParams.amount);

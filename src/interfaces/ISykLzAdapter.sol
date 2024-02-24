@@ -13,7 +13,8 @@ struct SendParams {
 }
 
 interface ISykLzAdapter {
-    error InvalidAmounts();
+    /// @notice Reverts with this error if the amount of SYK is lesser than the amount of xSYK passed
+    error SykLzAdapter_InvalidAmount();
 
     /// @notice Emitted on send()
     /// @param msgReceipt LayerZero Message Receipt.

@@ -5,12 +5,14 @@ import {AccessManaged} from "@openzeppelin/contracts/access/manager/AccessManage
 
 import {IStrykeTokenBase} from "../interfaces/IStrykeTokenBase.sol";
 
+import {ISykBridgeController, Bridge, BridgeParameters} from "../interfaces/ISykBridgeController.sol";
+
 /// @title The SYK Bridge Controller
 /// @author witherblock
 /// @notice The bridge controller is responsible for minting/burning the token on different chains.
 /// It is called by Bridge Adapters to teleport tokens across different chains.
 /// Inspired by the XERC20 standard (https://www.xerc20.com/)
-contract SykBridgeController is AccessManaged {
+contract SykBridgeController is ISykBridgeController, AccessManaged {
     /// @notice The token address of SYK
     IStrykeTokenBase public immutable token;
 
@@ -19,33 +21,6 @@ contract SykBridgeController is AccessManaged {
 
     /// @notice Maps bridge address to bridge configurations
     mapping(address => Bridge) public bridges;
-
-    /// @notice Emitted when the duration changes
-    /// @param duration duration after which the limits are fully replenished for bridges
-    event DurationUpdated(uint256 duration);
-
-    /// @notice Emitted when a bridge's limit changes
-    /// @param mintingLimit minting limit of the bridge
-    /// @param burningLimit burning limit of the bridge
-    /// @param bridge address of the bridge
-    event BridgeLimitsSet(uint256 mintingLimit, uint256 burningLimit, address bridge);
-
-    /// @dev Reverts with this error when a bridge has met its limits or have no limits sets
-    error NotHighEnoughLimits();
-
-    /// @dev Bridge struct defining the minter and burner params of a bridge
-    struct Bridge {
-        BridgeParameters minterParams;
-        BridgeParameters burnerParams;
-    }
-
-    /// @dev BridgeParameters struct defining the parameters for minting and burning
-    struct BridgeParameters {
-        uint256 timestamp;
-        uint256 ratePerSecond;
-        uint256 maxLimit;
-        uint256 currentLimit;
-    }
 
     /// @dev Constructor
     /// @param _token SYK address
@@ -74,39 +49,27 @@ contract SykBridgeController is AccessManaged {
         emit DurationUpdated(_duration);
     }
 
-    /// @notice Mints tokens for a user
-    /// @dev Can only be called by a bridge
-    /// @param _user The address of the user who needs tokens minted
-    /// @param _amount The amount of tokens being minted
+    /// @inheritdoc	ISykBridgeController
     function mint(address _user, uint256 _amount) external {
         _mintWithCaller(msg.sender, _user, _amount);
     }
 
-    /// @notice Burns tokens for a user
-    /// @dev Can only be called by a bridge
-    /// @param _user The address of the user who needs tokens burned
-    /// @param _amount The amount of tokens being burned
+    /// @inheritdoc	ISykBridgeController
     function burn(address _user, uint256 _amount) external {
         _burnWithCaller(msg.sender, _user, _amount);
     }
 
-    /// @notice Returns the max limit of a bridge
-    /// @param _bridge the bridge we are viewing the limits of
-    /// @return _limit The limit the bridge has
+    /// @inheritdoc	ISykBridgeController
     function mintingMaxLimitOf(address _bridge) external view returns (uint256 _limit) {
         _limit = bridges[_bridge].minterParams.maxLimit;
     }
 
-    /// @notice Returns the max limit of a bridge
-    /// @param _bridge the bridge we are viewing the limits of
-    /// @return _limit The limit the bridge has
+    /// @inheritdoc	ISykBridgeController
     function burningMaxLimitOf(address _bridge) external view returns (uint256 _limit) {
         _limit = bridges[_bridge].burnerParams.maxLimit;
     }
 
-    /// @notice Returns the current minting limit of a bridge
-    /// @param _bridge the bridge we are viewing the limits of
-    /// @return _limit The limit the bridge has
+    /// @inheritdoc	ISykBridgeController
     function mintingCurrentLimitOf(address _bridge) public view returns (uint256 _limit) {
         _limit = _getCurrentLimit(
             bridges[_bridge].minterParams.currentLimit,
@@ -116,9 +79,7 @@ contract SykBridgeController is AccessManaged {
         );
     }
 
-    /// @notice Returns the current burning limit of a bridge
-    /// @param _bridge the bridge we are viewing the limits of
-    /// @return _limit The limit the bridge has
+    /// @inheritdoc	ISykBridgeController
     function burningCurrentLimitOf(address _bridge) public view returns (uint256 _limit) {
         _limit = _getCurrentLimit(
             bridges[_bridge].burnerParams.currentLimit,
@@ -224,7 +185,7 @@ contract SykBridgeController is AccessManaged {
     /// @param _amount The amount to burn
     function _burnWithCaller(address _caller, address _user, uint256 _amount) internal {
         uint256 _currentLimit = burningCurrentLimitOf(_caller);
-        if (_currentLimit < _amount) revert NotHighEnoughLimits();
+        if (_currentLimit < _amount) revert SykBridgeController_NotHighEnoughLimits();
         _useBurnerLimits(_caller, _amount);
         IStrykeTokenBase(token).burn(_user, _amount);
     }
@@ -235,7 +196,7 @@ contract SykBridgeController is AccessManaged {
     /// @param _amount The amount to mint
     function _mintWithCaller(address _caller, address _user, uint256 _amount) internal {
         uint256 _currentLimit = mintingCurrentLimitOf(_caller);
-        if (_currentLimit < _amount) revert NotHighEnoughLimits();
+        if (_currentLimit < _amount) revert SykBridgeController_NotHighEnoughLimits();
         _useMinterLimits(_caller, _amount);
         IStrykeTokenBase(token).mint(_user, _amount);
     }

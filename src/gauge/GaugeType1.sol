@@ -32,9 +32,6 @@ contract GaugeType1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param add True if the adapter is authorized, false if revoked.
     event BridgeAdapterUpdated(address bridgeAdapter, bool add);
 
-    /// @dev Thrown when an operation involving an unrecognized bridge adapter is attempted.
-    error BridgeAdapterNotFound();
-
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();

@@ -8,40 +8,42 @@ abstract contract ContractWhitelist {
     /// @dev contract => whitelisted or not
     mapping(address => bool) public whitelistedContracts;
 
+    /*==== ERRORS ====*/
+
+    /// @dev Error indicating that the address provided is not a contract address.
+    error ContractWhitelist_AddressNotContract();
+
+    /// @dev Error indicating that the contract is already whitelisted.
+    error ContractWhitelist_AlreadyWhitelisted();
+
+    /// @dev Error indicating that the contract is not whitelisted.
+    error ContractWhitelist_NotWhitelisted();
+
     /*==== SETTERS ====*/
 
     /// @dev add to the contract whitelist
     /// @param _contract the address of the contract to add to the contract whitelist
-    function _addToContractWhitelist(address _contract) internal {
-        require(isContract(_contract), "Address must be a contract");
-        require(!whitelistedContracts[_contract], "Contract already whitelisted");
+    /// @param _add boolean for adding or removing
+    function updateContractWhitelist(address _contract, bool _add) public virtual {
+        if (!isContract(_contract)) revert ContractWhitelist_AddressNotContract();
+        if (whitelistedContracts[_contract]) revert ContractWhitelist_AlreadyWhitelisted();
 
-        whitelistedContracts[_contract] = true;
+        whitelistedContracts[_contract] = _add;
 
-        emit AddToContractWhitelist(_contract);
-    }
-
-    /// @dev remove from  the contract whitelist
-    /// @param _contract the address of the contract to remove from the contract whitelist
-    function _removeFromContractWhitelist(address _contract) internal {
-        require(whitelistedContracts[_contract], "Contract not whitelisted");
-
-        whitelistedContracts[_contract] = false;
-
-        emit RemoveFromContractWhitelist(_contract);
+        emit ContractWhitelistUpdated(_contract, _add);
     }
 
     // modifier is eligible sender modifier
     function _isEligibleSender() internal view {
         // the below condition checks whether the caller is a contract or not
         if (msg.sender != tx.origin) {
-            require(whitelistedContracts[msg.sender], "Contract must be whitelisted");
+            if (!whitelistedContracts[msg.sender]) revert ContractWhitelist_NotWhitelisted();
         }
     }
 
     /*==== VIEWS ====*/
 
-    /// @dev checks for contract or eoa addresses
+    /// @dev checks for contract or EOA addresses
     /// @param addr the address to check
     /// @return bool whether the passed address is a contract address
     function isContract(address addr) public view returns (bool) {
@@ -54,7 +56,8 @@ abstract contract ContractWhitelist {
 
     /*==== EVENTS ====*/
 
-    event AddToContractWhitelist(address indexed _contract);
-
-    event RemoveFromContractWhitelist(address indexed _contract);
+    /// @notice Emitted when the contract whitelist is updated
+    /// @param _contract Address of the contract
+    /// @param _add boolean for adding or removing
+    event ContractWhitelistUpdated(address indexed _contract, bool _add);
 }

@@ -75,13 +75,13 @@ contract XStrykeTokenTest is Test {
     function test_vestBasic() public {
         // Amount 0
         vm.startPrank(john.addr);
-        vm.expectRevert(IXStrykeToken.AmountCannotBeZero.selector);
+        vm.expectRevert(IXStrykeToken.XStrykeToken_AmountZero.selector);
         xSyk.vest(0, 7 days);
         vm.stopPrank();
 
         // Duration lower than minDuration
         vm.startPrank(john.addr);
-        vm.expectRevert(IXStrykeToken.DurationTooLow.selector);
+        vm.expectRevert(IXStrykeToken.XStrykeToken_DurationTooLow.selector);
         xSyk.vest(1 ether, 6 days);
         vm.stopPrank();
 
@@ -180,7 +180,7 @@ contract XStrykeTokenTest is Test {
         xSyk.convert(1 ether, john.addr);
         xSyk.vest(1 ether, 7 days);
 
-        vm.expectRevert(IXStrykeToken.VestingHasNotMatured.selector);
+        vm.expectRevert(IXStrykeToken.XStrykeToken_VestingHasNotMatured.selector);
         xSyk.redeem(0);
 
         skip(7 days);
@@ -190,7 +190,7 @@ contract XStrykeTokenTest is Test {
         // User gets back xSYK after cancelling
         assertEq(xSyk.balanceOf(john.addr), 1 ether);
         assertEq(xSyk.balanceOf(address(xSyk)), 0);
-        vm.expectRevert(IXStrykeToken.VestingNotActive.selector);
+        vm.expectRevert(IXStrykeToken.XStrykeToken_VestingNotActive.selector);
         xSyk.redeem(0);
 
         xSyk.vest(1 ether, 7 days);
@@ -200,7 +200,7 @@ contract XStrykeTokenTest is Test {
         assertEq(syk.balanceOf(address(this)), excess);
         assertEq(syk.balanceOf(john.addr), 0.5 ether);
 
-        vm.expectRevert(IXStrykeToken.VestingNotActive.selector);
+        vm.expectRevert(IXStrykeToken.XStrykeToken_VestingNotActive.selector);
         xSyk.cancelVest(1);
 
         vm.stopPrank();

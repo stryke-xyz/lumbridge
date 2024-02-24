@@ -5,6 +5,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {OApp, Origin, MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IXSykStakingLzAdapter} from "../../interfaces/IXSykStakingLzAdapter.sol";
 import {IGaugeController, VoteParams, PullParams} from "../../interfaces/IGaugeController.sol";
 import {ISykLzAdapter, SendParams} from "../../interfaces/ISykLzAdapter.sol";
 import {IXSykStaking} from "../../interfaces/IXSykStaking.sol";
@@ -14,7 +15,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 /// @title XSykStakingLzAdapter Contract
 /// @notice This contract facilitates staking, unstaking, claiming rewards, and exiting for xSYK tokens through LayerZero messaging.
-contract XSykStakingLzAdapter is OApp {
+contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
 
@@ -50,54 +51,6 @@ contract XSykStakingLzAdapter is OApp {
     /// @notice account => balance
     mapping(address => uint256) public balanceOf;
 
-    /*==== EVENTS ====*/
-
-    /// @notice Emitted when the xSYK reward conversion percentage is updated.
-    /// @param xSykRewardPercentage The percentage of SYK rewards to be sent in xSYK
-    event XSykRewardPercentageUpdated(uint256 xSykRewardPercentage);
-
-    /// @dev Emitted when tokens are staked in the contract.
-    /// @notice This event is fired whenever a user stakes tokens, indicating the amount staked.
-    /// @param account The address of the account that staked tokens.
-    /// @param amount The amount of tokens that were staked by the account.
-    /// @param msgReceipt The receipt of the LZ message
-    event Staked(address indexed account, uint256 amount, MessagingReceipt msgReceipt);
-
-    /// @dev Emitted when staked tokens are withdrawn (unstaked) from the contract.
-    /// @notice This event is fired whenever a user unstakes tokens, indicating the amount unstaked.
-    /// @param account The address of the account that unstaked tokens.
-    /// @param amount The amount of tokens that were unstaked by the account.
-    /// @param msgReceipt The receipt of the LZ message
-    event Unstaked(address indexed account, uint256 amount, MessagingReceipt msgReceipt);
-
-    /// @dev Emitted when rewards are claimed by a staker.
-    /// @notice This event is fired whenever a user claims their staking rewards, indicating the amount claimed.
-    /// @param account The address of the account that claimed rewards.
-    /// @param msgReceipt The receipt of the LZ message
-    event Claimed(address indexed account, MessagingReceipt msgReceipt);
-
-    /// @dev Emitted when an account is exiting the staking pool.
-    /// @param account The address of the account that is exiting.
-    /// @param amount The amount of balance that was withdrawn.
-    /// @param msgReceipt The receipt of the LZ message
-    event Exit(address indexed account, uint256 amount, MessagingReceipt msgReceipt);
-
-    /// @dev Emitted when this contract receives a message via LayerZero.
-    /// @param messageType Message type (stake, unstake, claim, exit).
-    /// @param amount Amount to stake or unstake, 0 for claim and exit.
-    /// @param account Address of the account.
-    /// @param guid Identifier for the LayerZero message.
-    /// @param srcEid Source Endpoint ID.
-    event MessageReceived(uint8 messageType, uint256 amount, address account, bytes32 guid, uint32 srcEid);
-
-    /*==== ERRORS ====*/
-
-    /// @dev Indicates an operation was attempted with an insufficient token balance.
-    error InsufficientBalance();
-
-    /// @dev Indicates an attempt to perform an operation without a corresponding staked amount.
-    error NoStakedAmountFound();
-
     /// @notice Constructor
     /// @param _endpoint Address of the LayerZero endpoint for this chain.
     /// @param _owner Address of the contract owner.
@@ -132,10 +85,7 @@ contract XSykStakingLzAdapter is OApp {
 
     /*==== PUBLIC FUNCTIONS ====*/
 
-    /// @notice Allows users to stake xSYK tokens and triggers a cross-chain message to the destination chain.
-    /// @param _amount The amount of xSYK tokens to stake.
-    /// @param _options LayerZero message options for cross-chain communication.
-    /// @return msgReceipt The receipt of the LayerZero message.
+    /// @inheritdoc IXSykStakingLzAdapter
     function stake(uint256 _amount, bytes calldata _options)
         external
         payable
@@ -144,7 +94,7 @@ contract XSykStakingLzAdapter is OApp {
         uint256 balance = xSyk.balanceOf(msg.sender);
 
         if (balance < _amount) {
-            revert InsufficientBalance();
+            revert XSykStakingLzAdapter_InsufficientBalance();
         }
 
         xSyk.safeTransferFrom(msg.sender, address(this), _amount);
@@ -164,10 +114,7 @@ contract XSykStakingLzAdapter is OApp {
         emit Staked(msg.sender, _amount, msgReceipt);
     }
 
-    /// @notice Allows users to unstake xSYK tokens and triggers a cross-chain message to the destination chain.
-    /// @param _amount The amount of xSYK tokens to unstake.
-    /// @param _options LayerZero message options for cross-chain communication.
-    /// @return msgReceipt The receipt of the LayerZero message.
+    /// @inheritdoc IXSykStakingLzAdapter
     function unstake(uint256 _amount, bytes calldata _options)
         external
         payable
@@ -188,9 +135,7 @@ contract XSykStakingLzAdapter is OApp {
         emit Unstaked(msg.sender, _amount, msgReceipt);
     }
 
-    /// @notice Allows users to claim their rewards, triggering a cross-chain message to handle the reward distribution.
-    /// @param _options LayerZero message options for cross-chain communication.
-    /// @return msgReceipt The receipt of the LayerZero message.
+    /// @inheritdoc IXSykStakingLzAdapter
     function claim(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt) {
         bytes memory payload = abi.encode(CLAIM_TYPE, 0, msg.sender);
 
@@ -205,9 +150,7 @@ contract XSykStakingLzAdapter is OApp {
         emit Claimed(msg.sender, msgReceipt);
     }
 
-    /// @notice Allows users to exit the staking pool, unstaking their tokens and claiming any rewards in a single transaction.
-    /// @param _options LayerZero message options for cross-chain communication.
-    /// @return msgReceipt The receipt of the LayerZero message.
+    /// @inheritdoc IXSykStakingLzAdapter
     function exit(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt) {
         uint256 accountBalance = balanceOf[msg.sender];
 
@@ -223,7 +166,7 @@ contract XSykStakingLzAdapter is OApp {
             payable(msg.sender) // The refund address in case the send call reverts.
         );
 
-        emit Exit(msg.sender, accountBalance, msgReceipt);
+        emit Exited(msg.sender, accountBalance, msgReceipt);
     }
 
     /*==== INTERNAL FUNCTIONS ====*/
@@ -254,7 +197,7 @@ contract XSykStakingLzAdapter is OApp {
         uint256 balance = balanceOf[_account];
 
         if (balance < _amount) {
-            revert InsufficientBalance();
+            revert XSykStakingLzAdapter_InsufficientBalance();
         }
 
         xSyk.safeTransfer(_account, _amount);

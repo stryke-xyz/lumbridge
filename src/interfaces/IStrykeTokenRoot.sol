@@ -7,13 +7,10 @@ interface IStrykeTokenRoot is IStrykeTokenBase {
     /// @notice Emitted on changes to inflation per year
     /// @param inflationPerYear the inflation per year
     /// @param emissionRatePerSecond the emission rate per second
-    event SetInflationPerYear(
-        uint256 inflationPerYear,
-        uint256 emissionRatePerSecond
-    );
+    event InflationPerYearSet(uint256 inflationPerYear, uint256 emissionRatePerSecond);
 
     /// @notice Reverts with this error if more tokens are trying to be emitted than the allowed emissions
-    error InflationExceeding();
+    error StrykeTokenRoot_InflationExceeding();
 
     /// @notice Returns the timestamp of the deployment of this contract
     function genesis() external view returns (uint256);

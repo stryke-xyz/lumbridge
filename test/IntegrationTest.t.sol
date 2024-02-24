@@ -414,7 +414,7 @@ contract IntegrationTest is Test {
         xSykStaking.setRewardsDuration(7 days);
         // Send 30% of rewards in xSYK
         xSykStaking.updateXSykRewardPercentage(50);
-        xSykRoot.addToContractWhitelist(address(xSykStaking));
+        xSykRoot.updateContractWhitelist(address(xSykStaking), true);
 
         uint256 amount = 700 ether;
 
@@ -458,7 +458,7 @@ contract IntegrationTest is Test {
         vm.stopPrank();
 
         xSykStakingLzAdapterRoot.updateXSykRewardPercentage(50);
-        xSykBsc.addToContractWhitelist(address(sykLzAdapterBsc));
+        xSykBsc.updateContractWhitelist(address(sykLzAdapterBsc), true);
 
         // Doe unstakes and gets reward from BSC
         vm.startPrank(doe.addr, doe.addr);

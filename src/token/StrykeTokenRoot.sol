@@ -52,7 +52,7 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
     /// @inheritdoc	IStrykeTokenRoot
     function stryke(uint256 _amount) external restricted {
         if (totalSupply() + _amount > availableSupply()) {
-            revert InflationExceeding();
+            revert StrykeTokenRoot_InflationExceeding();
         }
         _mint(msg.sender, _amount);
     }
@@ -62,6 +62,6 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
         inflationPerYear = _inflationPerYear;
         emissionRatePerSecond = _inflationPerYear / ONE_YEAR;
 
-        emit SetInflationPerYear(_inflationPerYear, emissionRatePerSecond);
+        emit InflationPerYearSet(_inflationPerYear, emissionRatePerSecond);
     }
 }

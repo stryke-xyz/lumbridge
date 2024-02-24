@@ -42,23 +42,23 @@ interface IXSykStaking {
 
     /// @dev Error thrown when an operation that requires a non-zero amount is attempted with a zero value.
     /// @notice Indicates that the operation cannot proceed because the amount specified is zero.
-    error AmountCannotBeZero();
+    error XSykStaking_AmountZero();
 
     /// @dev Error thrown when an operation requires the caller to be the same as a specified account, but it is not.
     /// @notice Indicates that the caller of the function must be the same as the account specified for the operation.
-    error AccountMustBeSender();
+    error XSykStaking_AccountNotSender();
 
     /// @dev Error thrown when an attempt is made to set or change the rewards duration while a previous rewards duration is still active.
     /// @notice Indicates that the rewards duration cannot be modified while the current rewards period has not yet concluded.
-    error RewardsDurationActive();
+    error XSykStaking_RewardsDurationActive();
 
     /// @dev Error thrown when an operation that requires a non-zero reward rate is attempted with a zero value.
     /// @notice Indicates that the reward rate for distributing rewards cannot be zero.
-    error RewardRateCannotBeZero();
+    error XSykStaking_RewardRateZero();
 
     /// @dev Error thrown when there are not enough rewards in the contract to cover a distribution or operation.
     /// @notice Indicates that the operation cannot proceed because the contract does not hold enough rewards to fulfill the request.
-    error NotEnoughRewardBalance();
+    error XSykStaking_NotEnoughRewardBalance();
 
     /// @notice Returns the saked balance of an account
     /// @param _account address of the account

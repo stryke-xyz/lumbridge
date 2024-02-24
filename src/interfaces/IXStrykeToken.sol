@@ -25,47 +25,47 @@ struct RedeemSettings {
 
 interface IXStrykeToken {
     /// @dev Emitted when incorrect ratio values are provided for redeem settings.
-    error WrongRatioValues();
+    error XStrykeToken_WrongRatioValues();
 
     /// @dev Emitted when incorrect duration values are provided for redeem settings.
-    error WrongDurationValues();
+    error XStrykeToken_WrongDurationValues();
 
     /// @dev Emitted when the provided amount for a transaction cannot be zero.
-    error AmountCannotBeZero();
+    error XStrykeToken_AmountZero();
 
     /// @dev Emitted when the provided duration for vesting is below the minimum allowed.
-    error DurationTooLow();
+    error XStrykeToken_DurationTooLow();
 
     /// @dev Emitted when the provided address for whitelist is the xSYK address itself.
-    error InvalidWhitelistAddress();
+    error XStrykeToken_InvalidWhitelistAddress();
 
     /// @dev Emitted when someone tries to redeem before their vesting is completed.
-    error VestingHasNotMatured();
+    error XStrykeToken_VestingHasNotMatured();
 
     /// @dev Emitted when someone tries to redeem a non-active vesting.
-    error VestingNotActive();
+    error XStrykeToken_VestingNotActive();
 
     /// @dev Emitted when a transfer of xSYK is happening between non-whitelisted accounts.
-    error TransferNotAllowed();
+    error XStrykeToken_TransferNotAllowed();
 
     /// @notice  Emitted when the excess receiver is updated.
     /// @param excessReceiver The new excess receiver address
-    event UpdateExcessReceiver(address excessReceiver);
+    event ExcessReceiverUpdated(address excessReceiver);
 
     /// @notice Emitted when redeem settings are updated.
     /// @param redeemSettings The new redeem settings applied.
-    event UpdateRedeemSettings(RedeemSettings redeemSettings);
+    event RedeemSettingsUpdated(RedeemSettings redeemSettings);
 
     /// @notice Emitted when an account's whitelist status is updated.
     /// @param account The account whose whitelist status is updated.
     /// @param add Boolean indicating whether the account was added to (true) or removed from (false) the whitelist.
-    event UpdateWhitelist(address account, bool add);
+    event WhitelistUpdated(address account, bool add);
 
     /// @notice Emitted when SYK tokens are converted to xSYK tokens.
     /// @param from The address of the account converting SYK to xSYK.
     /// @param to The address of the account receiving the xSYK tokens.
     /// @param amount The amount of SYK tokens being converted.
-    event Convert(address indexed from, address to, uint256 amount);
+    event Converted(address indexed from, address to, uint256 amount);
 
     /// @notice Emitted when xSYK tokens are vested for SYK redemption.
     /// @param account The account initiating the vest.
@@ -73,19 +73,19 @@ interface IXStrykeToken {
     /// @param sykAmount The amount of SYK tokens to be received upon vest completion.
     /// @param duration The duration of the vest in seconds.
     /// @param vestIndex The vest index
-    event Vest(address indexed account, uint256 xSykAmount, uint256 sykAmount, uint256 duration, uint256 vestIndex);
+    event Vested(address indexed account, uint256 xSykAmount, uint256 sykAmount, uint256 duration, uint256 vestIndex);
 
     /// @notice Emitted when vested xSYK tokens are redeemed for SYK.
     /// @param account The account redeeming the vested xSYK.
     /// @param xSykAmount The amount of xSYK tokens redeemed.
     /// @param sykAmount The amount of SYK tokens received in exchange.
-    event Redeem(address indexed account, uint256 xSykAmount, uint256 sykAmount);
+    event Redeemed(address indexed account, uint256 xSykAmount, uint256 sykAmount);
 
     /// @notice Emitted when a vesting operation is cancelled.
     /// @param account The account cancelling the vest.
     /// @param vestIndex The index of the vesting operation being cancelled.
     /// @param xSykAmount The amount of xSYK associated with the cancelled vest.
-    event CancelVest(address indexed account, uint256 vestIndex, uint256 xSykAmount);
+    event VestCancelled(address indexed account, uint256 vestIndex, uint256 xSykAmount);
 
     /// @notice Converts SYK to xSYK
     /// @param _amount amount of SYK to convert to xSYK

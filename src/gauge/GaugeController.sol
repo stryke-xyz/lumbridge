@@ -12,7 +12,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 /// @title Gauge Controller for Reward Distribution
 /// @notice Manages gauges for different chains, handles voting power allocation, and rewards distribution.
 /// @dev This contract allows bridge adapters and users to vote on gauges and pull rewards based on their voting power.
-contract GaugeController is AccessManaged, IGaugeController {
+contract GaugeController is IGaugeController, AccessManaged {
     using SafeERC20 for IStrykeTokenRoot;
 
     /// @notice The total reward distributed per epoch across all gauges.
@@ -101,7 +101,7 @@ contract GaugeController is AccessManaged, IGaugeController {
     /// @return id The unique identifier for the new gauge.
     function addGauge(GaugeInfo memory _gaugeInfo) external restricted returns (bytes32 id) {
         if (_gaugeInfo.gaugeAddress == address(0)) {
-            revert InvalidGauge();
+            revert GaugeController_InvalidGauge();
         }
 
         id = keccak256(abi.encode(_gaugeInfo.chainId, _gaugeInfo.gaugeAddress));
@@ -110,7 +110,7 @@ contract GaugeController is AccessManaged, IGaugeController {
 
         totalBaseRewardPerEpoch += _gaugeInfo.baseReward;
 
-        if (totalRewardPerEpoch < totalBaseRewardPerEpoch) revert NotEnoughRewardAvailable();
+        if (totalRewardPerEpoch < totalBaseRewardPerEpoch) revert GaugeController_NotEnoughRewardAvailable();
 
         totalVoteableRewardPerEpoch = totalRewardPerEpoch - totalBaseRewardPerEpoch;
 
@@ -147,7 +147,7 @@ contract GaugeController is AccessManaged, IGaugeController {
     /// @inheritdoc	IGaugeController
     function vote(VoteParams calldata _voteParams) external {
         if (gauges[_voteParams.gaugeId].gaugeAddress == address(0)) {
-            revert GaugeNotFound();
+            revert GaugeController_GaugeNotFound();
         }
 
         uint256 totalPower;
@@ -165,7 +165,7 @@ contract GaugeController is AccessManaged, IGaugeController {
         uint256 usedPower = accountPowerUsedPerEpoch[epoch()][accountId];
 
         if ((totalPower - usedPower) < _voteParams.power) {
-            revert NotEnoughPowerAvailable();
+            revert GaugeController_NotEnoughPowerAvailable();
         }
 
         accountPowerUsedPerEpoch[epoch()][accountId] += _voteParams.power;
@@ -174,22 +174,22 @@ contract GaugeController is AccessManaged, IGaugeController {
 
         totalPowerUsedPerEpoch[epoch()] += _voteParams.power;
 
-        emit Vote(_voteParams);
+        emit Voted(_voteParams);
     }
 
     /// @inheritdoc	IGaugeController
     function pull(PullParams calldata _pullParams) external returns (uint256 reward) {
         if (_pullParams.epoch >= epoch()) {
-            revert CannotPullDuringActiveEpoch();
+            revert GaugeController_EpochActive();
         }
 
         if (gaugeRewardPulledPerEpoch[_pullParams.epoch][_pullParams.gaugeId]) {
-            revert RewardAlreadyPulled();
+            revert GaugeController_RewardAlreadyPulled();
         }
 
         GaugeInfo memory gauge = gauges[_pullParams.gaugeId];
 
-        if ((gauge.gaugeAddress != msg.sender) && (!bridgeAdapters[msg.sender])) revert NotGauge();
+        if ((gauge.gaugeAddress != msg.sender) && (!bridgeAdapters[msg.sender])) revert GaugeController_NotGauge();
 
         gaugeRewardPulledPerEpoch[_pullParams.epoch][_pullParams.gaugeId] = true;
 

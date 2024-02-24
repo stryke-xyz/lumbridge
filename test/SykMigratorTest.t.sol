@@ -6,16 +6,16 @@ import {Test, console} from "forge-std/Test.sol";
 import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {StrykeTokenRoot} from "../src/token/StrykeTokenRoot.sol";
-import {Migrator} from "../src/migration/Migrator.sol";
+import {SykMigrator} from "../src/migration/SykMigrator.sol";
 import {MockToken} from "../src/mocks/MockToken.sol";
 
-contract MigratorTest is Test {
+contract SykMigratorTest is Test {
     StrykeTokenRoot public syk;
 
     MockToken public dpx;
     MockToken public rdpx;
 
-    Migrator public migrator;
+    SykMigrator public migrator;
 
     AccessManager public accessManager;
 
@@ -42,7 +42,7 @@ contract MigratorTest is Test {
             )
         );
 
-        migrator = new Migrator(address(dpx), address(rdpx), address(syk), address(accessManager));
+        migrator = new SykMigrator(address(dpx), address(rdpx), address(syk), address(accessManager));
 
         uint64 MINTER_SYK = 1;
 
@@ -57,7 +57,7 @@ contract MigratorTest is Test {
 
     function test_migrate() public {
         // Expect revert because incorrect token passed
-        vm.expectRevert(Migrator.InvalidToken.selector);
+        vm.expectRevert(SykMigrator.SykMigrator_InvalidToken.selector);
         vm.prank(john.addr);
         migrator.migrate(address(0), 1 ether);
 
@@ -106,13 +106,13 @@ contract MigratorTest is Test {
 
         vm.startPrank(john.addr);
         dpx.approve(address(migrator), 1 ether);
-        vm.expectRevert(Migrator.MigrationPeriodOver.selector);
+        vm.expectRevert(SykMigrator.SykMigrator_MigrationPeriodOver.selector);
         migrator.migrate(address(dpx), 1 ether);
         vm.stopPrank();
     }
 
     function test_extendMigrationPeriod() public {
-        vm.expectRevert(Migrator.MigrationPeriodNotOver.selector);
+        vm.expectRevert(SykMigrator.SykMigrator_MigrationPeriodNotOver.selector);
         migrator.extendMigrationPeriod(1);
 
         skip((migrator.migrationPeriodEnd() - block.timestamp) + 1);

@@ -26,32 +26,29 @@ struct PullParams {
 
 interface IGaugeController {
     /// @dev Error thrown when trying to pull rewards for a gauge in the current epoch.
-    error CannotPullDuringActiveEpoch();
+    error GaugeController_EpochActive();
 
     /// @dev Error thrown when the total reward available is insufficient to cover the base rewards.
-    error NotEnoughRewardAvailable();
+    error GaugeController_NotEnoughRewardAvailable();
 
     /// @dev Error thrown when an account does not have enough power to vote as requested.
-    error NotEnoughPowerAvailable();
-
-    /// @dev Error thrown when an address not recognized as a bridge adapter attempts a restricted action.
-    error BridgeAdapterNotFound();
+    error GaugeController_NotEnoughPowerAvailable();
 
     /// @dev Error thrown when an invalid gauge address is provided.
-    error InvalidGauge();
+    error GaugeController_InvalidGauge();
 
     /// @dev Error thrown when an action is attempted on a gauge that does not exist.
-    error GaugeNotFound();
+    error GaugeController_GaugeNotFound();
 
     /// @dev Error thrown when the msg.sender for pull() is not a gauge or a approved bridge adapter.
-    error NotGauge();
+    error GaugeController_NotGauge();
 
     /// @dev Error thrown when a gauge tries to pull rewards for an epoch which already had its rewards pulled.
-    error RewardAlreadyPulled();
+    error GaugeController_RewardAlreadyPulled();
 
     /// @notice Emitted when a vote is cast.
     /// @param voteParams The parameters for the vote.
-    event Vote(VoteParams voteParams);
+    event Voted(VoteParams voteParams);
 
     /// @notice Emitted when a gauge pulls its reward for the epoch.
     /// @param pullParams The parameters for the pull.

@@ -12,7 +12,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 /// @author witherblock
 /// @notice Handles the migration of DPX and rDPX tokens to SYK tokens according to specified conversion rates within a defined period. Only Available on Arbitrum.
 /// @dev Inherits from AccessManaged for access control.
-contract Migrator is AccessManaged {
+contract SykMigrator is AccessManaged {
     using SafeERC20 for IERC20;
 
     /// @notice Address of the DPX token contract.
@@ -34,19 +34,19 @@ contract Migrator is AccessManaged {
     uint256 public rdpxConversionRate = 133333;
 
     /// @dev Indicates an operation with an invalid token address.
-    error InvalidToken();
+    error SykMigrator_InvalidToken();
 
     /// @dev Indicates an attempt to migrate after the migration period has ended.
-    error MigrationPeriodOver();
+    error SykMigrator_MigrationPeriodOver();
 
     /// @dev Indicates an attempt to extend the migration period before the migration period has ended.
-    error MigrationPeriodNotOver();
+    error SykMigrator_MigrationPeriodNotOver();
 
     /// @dev Emitted when the migrate() function is called
     /// @param sender msg.sender of the tx
     /// @param token Address of the token being migrated (DPX or rDPX)
     /// @param amount Amount of the token being migrated
-    event Migrate(address sender, address token, uint256 amount);
+    event Migrated(address sender, address token, uint256 amount);
 
     /// @dev Emitted when the extendMigrationPeriod() function is called
     /// @param newMigrationPeriodEnd The new migration period end
@@ -77,7 +77,7 @@ contract Migrator is AccessManaged {
     /// @param _token Address of the token to migrate (DPX or rDPX).
     /// @param _amount Amount of tokens to migrate.
     function migrate(address _token, uint256 _amount) external {
-        if (migrationPeriodEnd < block.timestamp) revert MigrationPeriodOver();
+        if (migrationPeriodEnd < block.timestamp) revert SykMigrator_MigrationPeriodOver();
 
         IERC20 token;
         uint256 conversionRate;
@@ -89,20 +89,20 @@ contract Migrator is AccessManaged {
             token = IERC20(rdpx);
             conversionRate = rdpxConversionRate;
         } else {
-            revert InvalidToken();
+            revert SykMigrator_InvalidToken();
         }
 
         token.safeTransferFrom(msg.sender, address(this), _amount);
         IStrykeTokenBase(syk).mint(msg.sender, (conversionRate * _amount) / 1e4);
 
-        emit Migrate(msg.sender, _token, _amount);
+        emit Migrated(msg.sender, _token, _amount);
     }
 
     /// @notice Extends the migration period if over
     /// @dev Only accessible by users with the appropriate role (restricted access).
     /// @param _extendBy Extension time from block.timestamp in seconds
     function extendMigrationPeriod(uint256 _extendBy) external restricted {
-        if (migrationPeriodEnd > block.timestamp) revert MigrationPeriodNotOver();
+        if (migrationPeriodEnd > block.timestamp) revert SykMigrator_MigrationPeriodNotOver();
 
         migrationPeriodEnd = block.timestamp + _extendBy;
 

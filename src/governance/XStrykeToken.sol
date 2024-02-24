@@ -18,14 +18,14 @@ import {IXStrykeToken, VestData, VestStatus, RedeemSettings} from "../interfaces
 /// @author witherblock
 /// @notice Implements token staking and vesting mechanisms with upgradeable contract features.
 contract XStrykeToken is
+    ContractWhitelist,
     IXStrykeToken,
     Initializable,
     ERC20Upgradeable,
     ERC20PausableUpgradeable,
     AccessManagedUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard,
-    ContractWhitelist
+    ReentrancyGuard
 {
     using SafeERC20 for IStrykeTokenBase;
 
@@ -77,44 +77,39 @@ contract XStrykeToken is
     function updateExcessReceiver(address _excessReceiver) external restricted {
         excessReceiver = _excessReceiver;
 
-        emit UpdateExcessReceiver(_excessReceiver);
+        emit ExcessReceiverUpdated(_excessReceiver);
     }
 
     /// @dev Updates the redeem settings. Can only be called by admin.
     /// @param _redeemSettings RedeemSettings struct
     function updateRedeemSettings(RedeemSettings memory _redeemSettings) external restricted {
         if ((_redeemSettings.minRatio > _redeemSettings.maxRatio) || (_redeemSettings.maxRatio > MAX_FIXED_RATIO)) {
-            revert WrongRatioValues();
+            revert XStrykeToken_WrongRatioValues();
         }
 
-        if (_redeemSettings.minDuration > _redeemSettings.maxDuration) revert WrongDurationValues();
+        if (_redeemSettings.minDuration > _redeemSettings.maxDuration) revert XStrykeToken_WrongDurationValues();
 
         redeemSettings = _redeemSettings;
 
-        emit UpdateRedeemSettings(_redeemSettings);
+        emit RedeemSettingsUpdated(_redeemSettings);
     }
 
     /// @dev Updates the whitelist for transfers. Can only be called by admin.
     /// @param _account the address of the account
     /// @param _whitelisted whitelisted or not
     function updateWhitelist(address _account, bool _whitelisted) external restricted {
-        if (_account == address(this)) revert InvalidWhitelistAddress();
+        if (_account == address(this)) revert XStrykeToken_InvalidWhitelistAddress();
 
         whitelist[_account] = _whitelisted;
 
-        emit UpdateWhitelist(_account, _whitelisted);
+        emit WhitelistUpdated(_account, _whitelisted);
     }
 
-    /// @dev Add to the contract whitelist
-    /// @param _contract the address of the contract to add to the contract whitelist
-    function addToContractWhitelist(address _contract) external restricted {
-        _addToContractWhitelist(_contract);
-    }
-
-    /// @dev Remove from  the contract whitelist
-    /// @param _contract the address of the contract to remove from the contract whitelist
-    function removeFromContractWhitelist(address _contract) external restricted {
-        _removeFromContractWhitelist(_contract);
+    /// @dev Update contract whitelist
+    /// @param _contract the address of the contract to update the whitelist of
+    /// @param _add boolean for adding or removing
+    function updateContractWhitelist(address _contract, bool _add) public override(ContractWhitelist) restricted {
+        super.updateContractWhitelist(_contract, _add);
     }
 
     /*==== VIEWS ====*/
@@ -151,15 +146,15 @@ contract XStrykeToken is
 
     /// @inheritdoc	IXStrykeToken
     function vest(uint256 _amount, uint256 _duration) external nonReentrant {
-        if (_amount <= 0) revert AmountCannotBeZero();
-        if (_duration < redeemSettings.minDuration) revert DurationTooLow();
+        if (_amount <= 0) revert XStrykeToken_AmountZero();
+        if (_duration < redeemSettings.minDuration) revert XStrykeToken_DurationTooLow();
 
         _transfer(msg.sender, address(this), _amount);
 
         // get corresponding SYK amount
         uint256 sykAmount = getSykByVestingDuration(_amount, _duration);
 
-        emit Vest(msg.sender, _amount, sykAmount, _duration, vestIndex);
+        emit Vested(msg.sender, _amount, sykAmount, _duration, vestIndex);
 
         // if redeeming is not immediate, go through vesting process
         if (_duration > 0) {
@@ -181,8 +176,8 @@ contract XStrykeToken is
     /// @inheritdoc	IXStrykeToken
     function redeem(uint256 _vestIndex) external nonReentrant {
         VestData storage _vest = vests[_vestIndex];
-        if (_vest.maturity > block.timestamp) revert VestingHasNotMatured();
-        if (_vest.status != VestStatus.ACTIVE) revert VestingNotActive();
+        if (_vest.maturity > block.timestamp) revert XStrykeToken_VestingHasNotMatured();
+        if (_vest.status != VestStatus.ACTIVE) revert XStrykeToken_VestingNotActive();
 
         _vest.status = VestStatus.REDEEMED;
 
@@ -192,26 +187,26 @@ contract XStrykeToken is
     /// @inheritdoc	IXStrykeToken
     function cancelVest(uint256 _vestIndex) external nonReentrant {
         VestData storage _vest = vests[_vestIndex];
-        if (_vest.status != VestStatus.ACTIVE) revert VestingNotActive();
+        if (_vest.status != VestStatus.ACTIVE) revert XStrykeToken_VestingNotActive();
 
         _vest.status = VestStatus.CANCELLED;
 
         _transfer(address(this), msg.sender, _vest.xSykAmount);
 
-        emit CancelVest(msg.sender, _vestIndex, _vest.xSykAmount);
+        emit VestCancelled(msg.sender, _vestIndex, _vest.xSykAmount);
     }
 
     /*==== INTERNAL FUNCTIONS ====*/
 
     function _convert(uint256 _amount, address _to) internal {
-        if (_amount <= 0) revert AmountCannotBeZero();
+        if (_amount <= 0) revert XStrykeToken_AmountZero();
 
         syk.safeTransferFrom(msg.sender, address(this), _amount);
 
         // mint new xSYK
         _mint(_to, _amount);
 
-        emit Convert(msg.sender, _to, _amount);
+        emit Converted(msg.sender, _to, _amount);
     }
 
     function _redeem(address _account, uint256 _xSykAmount, uint256 _sykAmount) internal {
@@ -225,7 +220,7 @@ contract XStrykeToken is
         // Transfer excess to the excess receiver
         syk.safeTransfer(excessReceiver, excess);
 
-        emit Redeem(_account, _xSykAmount, _sykAmount);
+        emit Redeemed(_account, _xSykAmount, _sykAmount);
     }
 
     function _update(address from, address to, uint256 value)
@@ -235,7 +230,7 @@ contract XStrykeToken is
     {
         bool condition = (from == address(0)) || whitelist[from] || whitelist[to];
 
-        if (!condition) revert TransferNotAllowed();
+        if (!condition) revert XStrykeToken_TransferNotAllowed();
 
         super._update(from, to, value);
     }
