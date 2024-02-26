@@ -3,12 +3,10 @@ pragma solidity ^0.8.22;
 
 import {OApp} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {SykBridgeController} from "../SykBridgeController.sol";
 
-import {IXStrykeToken} from "../../interfaces/IXStrykeToken.sol";
-import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
+import {ISykBridgeController} from "../../interfaces/ISykBridgeController.sol";
+import {IXStrykeToken} from "../../interfaces/IXStrykeToken.sol";
 import {ISykLzAdapter, SendParams, Origin, MessagingFee, MessagingReceipt} from "../../interfaces/ISykLzAdapter.sol";
 
 /// @title The SYK LayerZero Adapter (uses LayerZero V2)
@@ -17,7 +15,7 @@ import {ISykLzAdapter, SendParams, Origin, MessagingFee, MessagingReceipt} from 
 /// @dev Is permissioned by the Bridge Controller to mint and burn
 contract SykLzAdapter is ISykLzAdapter, OApp {
     /// @dev The SYK Bridge Controller
-    SykBridgeController public immutable sykBridgeController;
+    ISykBridgeController public immutable sykBridgeController;
 
     IERC20 public immutable syk;
 
@@ -33,7 +31,7 @@ contract SykLzAdapter is ISykLzAdapter, OApp {
         OApp(_endpoint, _owner)
         Ownable(_owner)
     {
-        sykBridgeController = SykBridgeController(_sykBridgeController);
+        sykBridgeController = ISykBridgeController(_sykBridgeController);
         syk = IERC20(_syk);
         xSyk = IXStrykeToken(_xSyk);
     }
