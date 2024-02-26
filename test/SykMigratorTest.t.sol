@@ -7,7 +7,7 @@ import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManage
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {StrykeTokenRoot} from "../src/token/StrykeTokenRoot.sol";
 import {SykMigrator} from "../src/migration/SykMigrator.sol";
-import {MockToken} from "../src/mocks/MockToken.sol";
+import {MockToken} from "./mocks/MockToken.sol";
 
 contract SykMigratorTest is Test {
     StrykeTokenRoot public syk;

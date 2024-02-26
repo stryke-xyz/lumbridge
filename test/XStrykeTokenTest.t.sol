@@ -7,7 +7,7 @@ import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManage
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {XStrykeToken} from "../src/governance/XStrykeToken.sol";
 import {StrykeTokenRoot} from "../src/token/StrykeTokenRoot.sol";
-import {IXStrykeToken, VestData, VestStatus} from "../src/interfaces/IXStrykeToken.sol";
+import {IXStrykeToken, VestData, VestStatus, RedeemSettings} from "../src/interfaces/IXStrykeToken.sol";
 
 contract XStrykeTokenTest is Test {
     StrykeTokenRoot public syk;
@@ -49,6 +49,47 @@ contract XStrykeTokenTest is Test {
                 )
             )
         );
+    }
+
+    function test_updateExcessReceiver() public {
+        Account memory excessReceiver = makeAccount("excessReceiver");
+
+        xSyk.updateExcessReceiver(excessReceiver.addr);
+
+        assertEq(xSyk.excessReceiver(), excessReceiver.addr);
+    }
+
+    function test_updateRedeemSettings() public {
+        // Check when minRatio is greater than maxRatio
+        RedeemSettings memory _redeemSettings =
+            RedeemSettings({minRatio: 100, maxRatio: 90, minDuration: 7 days, maxDuration: 180 days});
+
+        vm.expectRevert(IXStrykeToken.XStrykeToken_WrongRatioValues.selector);
+        xSyk.updateRedeemSettings(_redeemSettings);
+
+        // Check when maxRatio is greater than the allowed MAX_RATIO
+        _redeemSettings = RedeemSettings({minRatio: 10, maxRatio: 101, minDuration: 7 days, maxDuration: 180 days});
+
+        vm.expectRevert(IXStrykeToken.XStrykeToken_WrongRatioValues.selector);
+        xSyk.updateRedeemSettings(_redeemSettings);
+
+        // Check when minDuration is greater than maxDuration
+        _redeemSettings = RedeemSettings({minRatio: 50, maxRatio: 100, minDuration: 7 days, maxDuration: 6 days});
+
+        vm.expectRevert(IXStrykeToken.XStrykeToken_WrongDurationValues.selector);
+        xSyk.updateRedeemSettings(_redeemSettings);
+
+        // Check if redeemSettings were set correctly
+        _redeemSettings = RedeemSettings({minRatio: 10, maxRatio: 90, minDuration: 7 days, maxDuration: 90 days});
+
+        xSyk.updateRedeemSettings(_redeemSettings);
+
+        (uint256 minRatio, uint256 maxRatio, uint256 minDuration, uint256 maxDuration) = xSyk.redeemSettings();
+
+        assertEq(minRatio, _redeemSettings.minRatio);
+        assertEq(maxRatio, _redeemSettings.maxRatio);
+        assertEq(minDuration, _redeemSettings.minDuration);
+        assertEq(maxDuration, _redeemSettings.maxDuration);
     }
 
     function test_convert() public {
@@ -127,7 +168,6 @@ contract XStrykeTokenTest is Test {
         (account, sykAmount, xSykAmount, maturity,) = xSyk.vests(0);
 
         assertEq(account, john.addr);
-        // Since its minDuration user gets back only 50%
         assertEq(sykAmount, 0.99 ether);
         assertEq(xSykAmount, 1 ether);
         assertEq(maturity, block.timestamp + 179 days);
@@ -145,7 +185,6 @@ contract XStrykeTokenTest is Test {
         (account, sykAmount, xSykAmount, maturity,) = xSyk.vests(1);
 
         assertEq(account, john.addr);
-        // Since its minDuration user gets back only 50%
         assertEq(sykAmount, 0.65 ether);
         assertEq(xSykAmount, 1 ether);
         assertEq(maturity, block.timestamp + 60 days);
@@ -163,10 +202,22 @@ contract XStrykeTokenTest is Test {
         (account, sykAmount, xSykAmount, maturity,) = xSyk.vests(2);
 
         assertEq(account, john.addr);
-        // Since its minDuration user gets back only 50%
         assertEq(sykAmount, 1 ether);
         assertEq(xSykAmount, 1 ether);
         assertEq(maturity, block.timestamp + 180 days);
+
+        vm.stopPrank();
+
+        // Test case where duration is set to 0 (this is used for instant redemption of SYK to xSYK)
+        xSyk.updateRedeemSettings(RedeemSettings({minDuration: 0, maxDuration: 1, minRatio: 100, maxRatio: 100}));
+        syk.mint(john.addr, 1 ether);
+        vm.startPrank(john.addr, john.addr);
+
+        syk.approve(address(xSyk), 1 ether);
+        xSyk.convert(1 ether, john.addr);
+        xSyk.vest(1 ether, 0);
+
+        assertEq(syk.balanceOf(john.addr), 1 ether);
 
         vm.stopPrank();
     }

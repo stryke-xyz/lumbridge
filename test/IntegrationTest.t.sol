@@ -2,13 +2,15 @@
 pragma solidity =0.8.23;
 
 import {Test, console} from "forge-std/Test.sol";
-import {StrykeTokenRoot} from "../src/token/StrykeTokenRoot.sol";
-import {StrykeTokenBase} from "../src/token/StrykeTokenBase.sol";
+
+import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
+import {MessagingFee} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import {StrykeTokenRoot} from "../src/token/StrykeTokenRoot.sol";
 import {StrykeTokenChild} from "../src/token/StrykeTokenChild.sol";
 import {SykBridgeController} from "../src/token/SykBridgeController.sol";
-import {EndpointV2Mock} from "../src/mocks/layerzero/EndpointV2Mock.sol";
+import {EndpointV2Mock} from "./mocks/layerzero/EndpointV2Mock.sol";
 import {SykLzAdapter} from "../src/token/bridge-adapters/SykLzAdapter.sol";
 import {XStrykeToken} from "../src/governance/XStrykeToken.sol";
 import {GaugeController} from "../src/gauge/GaugeController.sol";
@@ -16,14 +18,9 @@ import {GaugeInfo} from "../src/interfaces/IGaugeController.sol";
 import {GaugeType1} from "../src/gauge/GaugeType1.sol";
 import {XSykStaking} from "../src/governance/XSykStaking.sol";
 import {XSykStakingLzAdapter} from "../src/governance/bridge-adapters/XSykStakingLzAdapter.sol";
-
 import {VoteParams} from "../src/interfaces/IGaugeController.sol";
 import {GaugeControllerLzAdapter} from "../src/gauge/bridge-adapters/GaugeControllerLzAdapter.sol";
-
-import {SendParams} from "../src/interfaces/ISykLzAdapter.sol";
-
-import "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
-import "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
+import {ISykLzAdapter, SendParams} from "../src/interfaces/ISykLzAdapter.sol";
 
 // For the demonstration of all functionality we will assume the root chain to be Arbitrum and a child chain BSC
 contract IntegrationTest is Test {
@@ -228,24 +225,53 @@ contract IntegrationTest is Test {
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
 
+        // Check revert block start
+
         SendParams memory sendParams =
-            SendParams({dstEid: 30102, to: john.addr, amount: 1 ether, options: options, xSykAmount: 0});
+            SendParams({dstEid: 30102, to: john.addr, amount: 1 ether, options: options, xSykAmount: 1.1 ether});
 
         MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
+
+        vm.expectRevert(ISykLzAdapter.SykLzAdapter_InvalidAmount.selector);
+        vm.prank(john.addr);
+        sykLzAdapterRoot.send{value: msgFee.nativeFee}(sendParams, msgFee, john.addr);
+
+        // Check revert block end
+
+        sendParams = SendParams({dstEid: 30102, to: john.addr, amount: 1 ether, options: options, xSykAmount: 0});
+
+        msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
 
         vm.prank(john.addr);
         sykLzAdapterRoot.send{value: msgFee.nativeFee}(sendParams, msgFee, john.addr);
         assertEq(sykRoot.balanceOf(john.addr), 0);
         assertEq(sykBsc.balanceOf(john.addr), 1 ether);
 
+        // Check with xSYK amount block start
+        xSykBsc.updateContractWhitelist(address(sykLzAdapterBsc), true);
+        sykRoot.mint(john.addr, 1 ether);
+        assertEq(sykRoot.balanceOf(john.addr), 1 ether);
+
+        sendParams =
+            SendParams({dstEid: 30102, to: john.addr, amount: 1 ether, options: options, xSykAmount: 0.5 ether});
+
+        msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
+
+        vm.prank(john.addr);
+        sykLzAdapterRoot.send{value: msgFee.nativeFee}(sendParams, msgFee, john.addr);
+        assertEq(sykRoot.balanceOf(john.addr), 0 ether);
+        assertEq(sykBsc.balanceOf(john.addr), 1.5 ether);
+        assertEq(xSykBsc.balanceOf(john.addr), 0.5 ether);
+        // Check with xSYK amount block end
+
         SendParams memory sendParams2 =
-            SendParams({dstEid: 30110, to: john.addr, amount: 1 ether, options: options, xSykAmount: 0});
+            SendParams({dstEid: 30110, to: john.addr, amount: 1.5 ether, options: options, xSykAmount: 0});
 
         MessagingFee memory msgFee2 = sykLzAdapterBsc.quoteSend(sendParams2, false);
 
         vm.prank(john.addr);
         sykLzAdapterBsc.send{value: msgFee2.nativeFee}(sendParams2, msgFee2, john.addr);
-        assertEq(sykRoot.balanceOf(john.addr), 1 ether);
+        assertEq(sykRoot.balanceOf(john.addr), 1.5 ether);
         assertEq(sykBsc.balanceOf(john.addr), 0);
     }
 

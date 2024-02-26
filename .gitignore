@@ -13,3 +13,7 @@ docs/
 # Dotenv file
 .env
 node_modules
+
+# Coverage files
+coverage/
+lcov.info
