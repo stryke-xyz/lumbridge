@@ -24,14 +24,6 @@ contract GaugeType1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @notice Token rewarded to the gauge.
     IERC20 public syk;
 
-    /// @notice Tracks authorized bridge adapters.
-    mapping(address => bool) public bridgeAdapters;
-
-    /// @notice Emitted when a bridge adapter's authorization status is updated.
-    /// @param bridgeAdapter Address of the bridge adapter.
-    /// @param add True if the adapter is authorized, false if revoked.
-    event BridgeAdapterUpdated(address bridgeAdapter, bool add);
-
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -47,16 +39,6 @@ contract GaugeType1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         __Ownable_init(_initialOwner);
         __UUPSUpgradeable_init();
-    }
-
-    /// @notice Updates the authorization status of a bridge adapter.
-    /// @dev Only callable by the contract owner.
-    /// @param _bridgeAdapter Address of the bridge adapter to update.
-    /// @param _add True to authorize, false to revoke authorization.
-    function updateBridgeAdapter(address _bridgeAdapter, bool _add) external onlyOwner {
-        bridgeAdapters[_bridgeAdapter] = _add;
-
-        emit BridgeAdapterUpdated(_bridgeAdapter, _add);
     }
 
     /// @notice Pulls rewards for a specific epoch from the GaugeController, applicable only to gauges on Arbitrum.
