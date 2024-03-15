@@ -176,6 +176,7 @@ contract XStrykeToken is
     /// @inheritdoc	IXStrykeToken
     function redeem(uint256 _vestIndex) external nonReentrant {
         VestData storage _vest = vests[_vestIndex];
+        if (_vest.account != msg.sender) revert XStrykeToken_SenderNotOwner();
         if (_vest.maturity > block.timestamp) revert XStrykeToken_VestingHasNotMatured();
         if (_vest.status != VestStatus.ACTIVE) revert XStrykeToken_VestingNotActive();
 
@@ -187,6 +188,7 @@ contract XStrykeToken is
     /// @inheritdoc	IXStrykeToken
     function cancelVest(uint256 _vestIndex) external nonReentrant {
         VestData storage _vest = vests[_vestIndex];
+        if (_vest.account != msg.sender) revert XStrykeToken_SenderNotOwner();
         if (_vest.status != VestStatus.ACTIVE) revert XStrykeToken_VestingNotActive();
 
         _vest.status = VestStatus.CANCELLED;
