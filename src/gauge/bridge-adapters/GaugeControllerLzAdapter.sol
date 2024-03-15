@@ -185,7 +185,11 @@ contract GaugeControllerLzAdapter is OApp {
         emit MessageReceived(_message, _guid, _origin.srcEid);
     }
 
-    // be able to receive ether
+    function recoverNative() external onlyOwner {
+        payable(msg.sender).transfer(address(this).balance);
+    }
+
+    // be able to receive native tokens
     receive() external payable virtual {}
 
     fallback() external payable {}

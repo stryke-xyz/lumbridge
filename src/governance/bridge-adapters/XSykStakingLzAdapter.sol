@@ -233,7 +233,11 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         sykLzAdapter.send{value: msgFee.nativeFee}(sendParams, msgFee, address(this));
     }
 
-    // be able to receive ether
+    function recoverNative() external onlyOwner {
+        payable(msg.sender).transfer(address(this).balance);
+    }
+
+    // be able to receive native token
     receive() external payable virtual {}
 
     fallback() external payable {}
