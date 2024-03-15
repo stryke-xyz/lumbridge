@@ -315,8 +315,6 @@ contract IntegrationTest is Test {
         bytes32 gaugeAId = gaugeController.addGauge(gaugeAInfo);
         bytes32 gaugeBId = gaugeController.addGauge(gaugeBInfo);
 
-        console.log(gaugeController.epoch());
-
         // Mint SYK to john and doe on arbitrum
         sykRoot.mint(john.addr, 1 ether);
         sykRoot.mint(doe.addr, 2 ether);
@@ -350,6 +348,7 @@ contract IntegrationTest is Test {
         vm.stopPrank();
 
         skip(7 days);
+        gaugeController.finalizeEpoch(0);
         gaugeA.pull(0);
         assertEq(sykRoot.balanceOf(address(this)), 433333333333333333333);
         gaugeB.pull(0);
@@ -418,6 +417,7 @@ contract IntegrationTest is Test {
         vm.stopPrank();
 
         skip(7 days);
+        gaugeController.finalizeEpoch(0);
 
         gaugeA.pull(0);
 
@@ -649,6 +649,7 @@ contract IntegrationTest is Test {
         vm.stopPrank();
 
         skip(7 days);
+        gaugeController.finalizeEpoch(0);
 
         gaugeA.pull(0);
 

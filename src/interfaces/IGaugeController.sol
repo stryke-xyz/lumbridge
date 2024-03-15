@@ -49,6 +49,8 @@ interface IGaugeController {
 
     error GaugeController_IncorrectEpoch();
 
+    error GaugeController_EpochNotFinalized();
+
     /// @notice Emitted when a vote is cast.
     /// @param voteParams The parameters for the vote.
     event Voted(VoteParams voteParams);

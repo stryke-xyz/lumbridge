@@ -24,6 +24,17 @@ contract GaugeController is IGaugeController, AccessManaged {
     /// @notice The sum of base rewards for all gauges per epoch.
     uint256 public totalBaseRewardPerEpoch;
 
+    /// @notice The total reward distributed per epoch across all gauges.
+    mapping(uint256 => uint256) public totalReward;
+
+    /// @notice The portion of the total reward per epoch that is allocated based on voting.
+    mapping(uint256 => uint256) public totalVoteableReward;
+
+    /// @notice The sum of base rewards for all gauges per epoch.
+    mapping(uint256 => uint256) public totalBaseReward;
+
+    mapping(uint256 => bool) public epochFinalized;
+
     /// @notice Length of an epoch in seconds.
     uint256 public constant EPOCH_LENGTH = 7 days;
 
@@ -130,6 +141,20 @@ contract GaugeController is IGaugeController, AccessManaged {
         gauges[_gaugeId] = GaugeInfo({gaugeType: 0, chainId: 0, baseReward: 0, gaugeAddress: address(0)});
     }
 
+    function finalizeEpoch(uint256 _epoch) external restricted {
+        if (_epoch == 0) {
+            totalBaseReward[_epoch] = totalBaseRewardPerEpoch;
+            totalVoteableReward[_epoch] = totalVoteableRewardPerEpoch;
+            totalReward[_epoch] = totalRewardPerEpoch;
+        }
+
+        epochFinalized[_epoch] = true;
+
+        totalBaseReward[_epoch + 1] = totalBaseRewardPerEpoch;
+        totalVoteableReward[_epoch + 1] = totalVoteableRewardPerEpoch;
+        totalReward[_epoch + 1] = totalRewardPerEpoch;
+    }
+
     /// @inheritdoc	IGaugeController
     function epoch() public view returns (uint256 _epoch) {
         _epoch = (block.timestamp - genesis) / EPOCH_LENGTH;
@@ -138,7 +163,7 @@ contract GaugeController is IGaugeController, AccessManaged {
     /// @inheritdoc	IGaugeController
     function computeRewards(bytes32 _id, uint256 _epoch) public view returns (uint256 reward) {
         // Compute the rewards from the voteable rewards
-        reward = totalVoteableRewardPerEpoch * gaugePowersPerEpoch[_epoch][_id] / totalPowerUsedPerEpoch[_epoch];
+        reward = totalVoteableReward[_epoch] * gaugePowersPerEpoch[_epoch][_id] / totalPowerUsedPerEpoch[_epoch];
 
         // Add base reward
         reward += gauges[_id].baseReward;
@@ -146,6 +171,12 @@ contract GaugeController is IGaugeController, AccessManaged {
 
     /// @inheritdoc	IGaugeController
     function vote(VoteParams calldata _voteParams) external {
+        if (_voteParams.epoch != 0) {
+            if (!epochFinalized[_voteParams.epoch - 1]) {
+                revert GaugeController_EpochNotFinalized();
+            }
+        }
+
         if (_voteParams.epoch != epoch()) {
             revert GaugeController_IncorrectEpoch();
         }
@@ -183,6 +214,8 @@ contract GaugeController is IGaugeController, AccessManaged {
 
     /// @inheritdoc	IGaugeController
     function pull(PullParams calldata _pullParams) external returns (uint256 reward) {
+        if (!epochFinalized[_pullParams.epoch]) revert GaugeController_EpochNotFinalized();
+
         if (_pullParams.epoch >= epoch()) {
             revert GaugeController_EpochActive();
         }
