@@ -13,6 +13,8 @@ import {IXSykStaking} from "../../interfaces/IXSykStaking.sol";
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {Test, console} from "forge-std/Test.sol";
+
 /// @title XSykStakingLzAdapter Contract
 /// @notice This contract facilitates staking, unstaking, claiming rewards, and exiting for xSYK tokens through LayerZero messaging.
 contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
@@ -101,7 +103,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
 
         balanceOf[msg.sender] += _amount;
 
-        bytes memory payload = abi.encode(STAKE_TYPE, _amount, msg.sender);
+        bytes memory payload = abi.encode(STAKE_TYPE, _amount, block.chainid, msg.sender);
 
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
@@ -122,7 +124,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
     {
         _unstake(msg.sender, _amount);
 
-        bytes memory payload = abi.encode(UNSTAKE_TYPE, _amount, msg.sender);
+        bytes memory payload = abi.encode(UNSTAKE_TYPE, _amount, block.chainid, msg.sender);
 
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
@@ -137,7 +139,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
 
     /// @inheritdoc IXSykStakingLzAdapter
     function claim(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt) {
-        bytes memory payload = abi.encode(CLAIM_TYPE, 0, msg.sender);
+        bytes memory payload = abi.encode(CLAIM_TYPE, 0, block.chainid, msg.sender);
 
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
@@ -156,7 +158,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
 
         _unstake(msg.sender, balanceOf[msg.sender]);
 
-        bytes memory payload = abi.encode(EXIT_TYPE, 0, msg.sender);
+        bytes memory payload = abi.encode(EXIT_TYPE, 0, block.chainid, msg.sender);
 
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
@@ -175,17 +177,18 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
         internal
         override
     {
-        (uint8 MSG_TYPE, uint256 _amount, address _account) = abi.decode(_message, (uint8, uint256, address));
+        (uint8 MSG_TYPE, uint256 _amount, uint256 _chainId, address _account) =
+            abi.decode(_message, (uint8, uint256, uint256, address));
         if (MSG_TYPE == 1) {
-            xSykStaking.stake(_amount, _account);
+            xSykStaking.stake(_amount, _chainId, _account);
         } else if (MSG_TYPE == 2) {
-            xSykStaking.unstake(_amount, _account);
+            xSykStaking.unstake(_amount, _chainId, _account);
         } else if (MSG_TYPE == 3) {
-            uint256 reward = xSykStaking.claim(_account);
+            uint256 reward = xSykStaking.claim(_chainId, _account);
             uint256 xSykReward = (reward * xSykRewardPercentage) / 100;
             _sendSyk(_origin.srcEid, reward, xSykReward, _account);
         } else if (MSG_TYPE == 4) {
-            (, uint256 reward) = xSykStaking.exit(_account);
+            (, uint256 reward) = xSykStaking.exit(_chainId, _account);
             uint256 xSykReward = (reward * xSykRewardPercentage) / 100;
             _sendSyk(_origin.srcEid, reward, xSykReward, _account);
         }

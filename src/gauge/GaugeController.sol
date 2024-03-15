@@ -158,8 +158,8 @@ contract GaugeController is IGaugeController, AccessManaged {
             accountId = _voteParams.accountId;
         } else {
             totalPower += IStrykeTokenRoot(xSyk).balanceOf(msg.sender);
-            totalPower += IXSykStaking(xSykStaking).balanceOf(msg.sender);
             accountId = keccak256(abi.encode(block.chainid, msg.sender));
+            totalPower += IXSykStaking(xSykStaking).balanceOf(accountId);
         }
 
         uint256 usedPower = accountPowerUsedPerEpoch[epoch()][accountId];

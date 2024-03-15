@@ -456,18 +456,21 @@ contract IntegrationTest is Test {
         sykRoot.approve(address(xSykRoot), 1 ether);
         xSykRoot.convert(1 ether, john.addr);
         xSykRoot.approve(address(xSykStaking), 1 ether);
-        xSykStaking.stake(1 ether, john.addr);
-        assertEq(xSykStaking.balanceOf(john.addr), 1 ether);
+        xSykStaking.stake(1 ether, 42161, john.addr);
+        bytes32 johnId = keccak256(abi.encode(42161, john.addr));
+        assertEq(xSykStaking.balanceOf(johnId), 1 ether);
         vm.stopPrank();
 
         // Doe stakes from BSC
         vm.startPrank(doe.addr, doe.addr);
+        vm.chainId(56);
         sykBsc.approve(address(xSykBsc), 1 ether);
         xSykBsc.convert(1 ether, doe.addr);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykBsc.approve(address(xSykStakingLzAdapterBsc), 1 ether);
         xSykStakingLzAdapterBsc.stake{value: 1 ether}(1 ether, options);
-        assertEq(xSykStaking.balanceOf(doe.addr), 1 ether);
+        bytes32 doeId = keccak256(abi.encode(56, doe.addr));
+        assertEq(xSykStaking.balanceOf(doeId), 1 ether);
         vm.stopPrank();
 
         // Skip until end of staking period
@@ -475,10 +478,11 @@ contract IntegrationTest is Test {
 
         // John unstakes and gets reward from arbitrum
         vm.startPrank(john.addr, john.addr);
-        xSykStaking.unstake(1 ether, john.addr);
+        vm.chainId(42161);
+        xSykStaking.unstake(1 ether, 42161, john.addr);
         assertEq(xSykRoot.balanceOf(john.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(john.addr), 0);
-        xSykStaking.claim(john.addr);
+        assertEq(xSykStaking.balanceOf(keccak256(abi.encode(42161, john.addr))), 0);
+        xSykStaking.claim(42161, john.addr);
         assertEq(sykRoot.balanceOf(john.addr), 174999999999999938400);
         assertEq(xSykRoot.balanceOf(john.addr), 175999999999999938400);
         vm.stopPrank();
@@ -488,12 +492,13 @@ contract IntegrationTest is Test {
 
         // Doe unstakes and gets reward from BSC
         vm.startPrank(doe.addr, doe.addr);
+        vm.chainId(56);
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykStakingLzAdapterBsc.unstake{value: 1 ether}(1 ether, options);
         assertEq(xSykBsc.balanceOf(doe.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(doe.addr), 0);
+        assertEq(xSykStaking.balanceOf(keccak256(abi.encode(56, doe.addr))), 0);
 
-        uint256 reward = xSykStaking.earned(doe.addr);
+        uint256 reward = xSykStaking.earned(keccak256(abi.encode(56, doe.addr)));
 
         SendParams memory sendParams =
             SendParams({dstEid: 30102, to: address(doe.addr), amount: reward, options: options, xSykAmount: reward / 2});
@@ -521,21 +526,23 @@ contract IntegrationTest is Test {
 
         // John stakes from Arbitrum
         vm.startPrank(john.addr, john.addr);
+        vm.chainId(42161);
         sykRoot.approve(address(xSykRoot), 1 ether);
         xSykRoot.convert(1 ether, john.addr);
         xSykRoot.approve(address(xSykStaking), 1 ether);
-        xSykStaking.stake(1 ether, john.addr);
-        assertEq(xSykStaking.balanceOf(john.addr), 1 ether);
+        xSykStaking.stake(1 ether, 42161, john.addr);
+        assertEq(xSykStaking.balanceOf(keccak256(abi.encode(42161, john.addr))), 1 ether);
         vm.stopPrank();
 
         // Doe stakes from BSC
         vm.startPrank(doe.addr, doe.addr);
+        vm.chainId(56);
         sykBsc.approve(address(xSykBsc), 1 ether);
         xSykBsc.convert(1 ether, doe.addr);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykBsc.approve(address(xSykStakingLzAdapterBsc), 1 ether);
         xSykStakingLzAdapterBsc.stake{value: 1 ether}(1 ether, options);
-        assertEq(xSykStaking.balanceOf(doe.addr), 1 ether);
+        assertEq(xSykStaking.balanceOf(keccak256(abi.encode(56, doe.addr))), 1 ether);
         vm.stopPrank();
 
         // Skip until end of staking period
@@ -543,15 +550,19 @@ contract IntegrationTest is Test {
 
         // John exits from arbitrum
         vm.startPrank(john.addr, john.addr);
-        xSykStaking.exit(john.addr);
+        vm.chainId(42161);
+        xSykStaking.exit(42161, john.addr);
+        bytes32 johnId = keccak256(abi.encode(42161, doe.addr));
         assertEq(xSykRoot.balanceOf(john.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(john.addr), 0);
+        assertEq(xSykStaking.balanceOf(johnId), 0);
         assertEq(sykRoot.balanceOf(john.addr), 349999999999999876800);
         vm.stopPrank();
 
         // Doe exits from BSC
         vm.startPrank(doe.addr, doe.addr);
-        uint256 reward = xSykStaking.earned(doe.addr);
+        vm.chainId(56);
+        bytes32 doeId = keccak256(abi.encode(56, doe.addr));
+        uint256 reward = xSykStaking.earned(doeId);
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         SendParams memory sendParams =
             SendParams({dstEid: 30102, to: address(doe.addr), amount: reward, options: options, xSykAmount: 0});
@@ -560,7 +571,7 @@ contract IntegrationTest is Test {
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
         xSykStakingLzAdapterBsc.exit{value: 1 ether}(options);
         assertEq(xSykBsc.balanceOf(doe.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(doe.addr), 0);
+        assertEq(xSykStaking.balanceOf(doeId), 0);
         assertEq(sykBsc.balanceOf(doe.addr), 349999999999999876800);
         vm.stopPrank();
     }
@@ -610,7 +621,7 @@ contract IntegrationTest is Test {
         sykRoot.approve(address(xSykRoot), 1 ether);
         xSykRoot.convert(1 ether, john.addr);
         xSykRoot.approve(address(xSykStaking), 1 ether);
-        xSykStaking.stake(1 ether, john.addr);
+        xSykStaking.stake(1 ether, 42161, john.addr);
         gaugeController.vote(
             VoteParams({
                 power: 1 ether,

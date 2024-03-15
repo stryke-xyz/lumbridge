@@ -8,6 +8,7 @@ import {IXStrykeToken} from "../interfaces/IXStrykeToken.sol";
 import {IXSykStaking} from "../interfaces/IXSykStaking.sol";
 
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Test, console} from "forge-std/Test.sol";
 
 /// @title XSyk Staking Contract
 /// @notice Enables staking of a specific token and distribution of rewards over a fixed duration.
@@ -49,13 +50,13 @@ contract XSykStaking is IXSykStaking, AccessManaged {
     mapping(address => bool) public bridgeAdapters;
 
     /// @notice Stores the rewardPerToken value at which each user's rewards were last calculated.
-    mapping(address => uint256) public userRewardPerTokenPaid;
+    mapping(bytes32 => uint256) public userRewardPerTokenPaid;
 
     /// @notice Stores the rewards that are yet to be claimed by each user.
-    mapping(address => uint256) public rewards;
+    mapping(bytes32 => uint256) public rewards;
 
     /// @notice Amount of the staking token staked by each user.
-    mapping(address => uint256) public balanceOf;
+    mapping(bytes32 => uint256) public balanceOf;
 
     /// @notice Initializes the staking and rewards tokens, along with the initial authority for access management.
     /// @param _stakingToken Address of the staking token.
@@ -70,17 +71,15 @@ contract XSykStaking is IXSykStaking, AccessManaged {
     }
 
     /// @dev Updates reward calculation for a user before executing function logic.
-    /// @param _account Address of the user for whom rewards are updated.
-    modifier updateReward(address _account) {
+    /// @param _accountId Address of the user for whom rewards are updated.
+    function updateReward(bytes32 _accountId) private {
         rewardPerTokenStored = rewardPerToken();
         updatedAt = lastTimeRewardApplicable();
 
-        if (_account != address(0)) {
-            rewards[_account] = earned(_account);
-            userRewardPerTokenPaid[_account] = rewardPerTokenStored;
+        if (_accountId != 0) {
+            rewards[_accountId] = earned(_accountId);
+            userRewardPerTokenPaid[_accountId] = rewardPerTokenStored;
         }
-
-        _;
     }
 
     /// @notice Updates the authorization status of a bridge adapter.
@@ -116,59 +115,79 @@ contract XSykStaking is IXSykStaking, AccessManaged {
         return rewardPerTokenStored + (rewardRate * (lastTimeRewardApplicable() - updatedAt) * 1e18) / totalSupply;
     }
 
-    /// @notice Allows a user or a bridge adapter to stake tokens on behalf of a user.
-    /// @param _amount Amount of tokens to stake.
-    /// @param _account Address of the user on whose behalf tokens are staked.
-    function stake(uint256 _amount, address _account) external updateReward(_account) {
+    /// @inheritdoc	IXSykStaking
+    function stake(uint256 _amount, uint256 _chainId, address _account) external {
         if (_amount < 0) revert XSykStaking_AmountZero();
+
+        bytes32 accountId;
+        uint256 chainId = _chainId;
 
         if (!bridgeAdapters[msg.sender]) {
             if (_account != msg.sender) revert XSykStaking_AccountNotSender();
             stakingToken.safeTransferFrom(_account, address(this), _amount);
+            chainId = block.chainid;
+            accountId = keccak256(abi.encode(chainId, msg.sender));
+        } else {
+            accountId = keccak256(abi.encode(chainId, _account));
         }
 
-        balanceOf[_account] += _amount;
+        updateReward(accountId);
+
+        balanceOf[accountId] += _amount;
         totalSupply += _amount;
 
-        emit Staked(_account, _amount);
+        emit Staked(_account, _amount, chainId);
     }
 
-    /// @notice Unstakes staked tokens for a user.
-    /// @param _amount Amount of tokens to withdraw.
-    /// @param _account Address of the user withdrawing tokens.
-    function unstake(uint256 _amount, address _account) public updateReward(_account) {
+    /// @inheritdoc	IXSykStaking
+    function unstake(uint256 _amount, uint256 _chainId, address _account) public {
         if (_amount < 0) revert XSykStaking_AmountZero();
+
+        bytes32 accountId;
+        uint256 chainId = _chainId;
 
         if (!bridgeAdapters[msg.sender]) {
             if (_account != msg.sender) revert XSykStaking_AccountNotSender();
             stakingToken.safeTransfer(_account, _amount);
+            chainId = block.chainid;
+            accountId = keccak256(abi.encode(chainId, msg.sender));
+        } else {
+            chainId = block.chainid;
+            accountId = keccak256(abi.encode(chainId, _account));
         }
 
-        balanceOf[_account] -= _amount;
+        updateReward(accountId);
+
+        balanceOf[accountId] -= _amount;
         totalSupply -= _amount;
 
-        emit Unstaked(_account, _amount);
+        emit Unstaked(_account, _amount, chainId);
+    }
+    /// @inheritdoc	IXSykStaking
+
+    function earned(bytes32 _accountId) public view returns (uint256) {
+        return ((balanceOf[_accountId] * (rewardPerToken() - userRewardPerTokenPaid[_accountId])) / 1e18)
+            + rewards[_accountId];
     }
 
-    /// @notice Calculates the total rewards earned by a user.
-    /// @param _account Address of the user.
-    /// @return The total rewards earned.
-    function earned(address _account) public view returns (uint256) {
-        return
-            ((balanceOf[_account] * (rewardPerToken() - userRewardPerTokenPaid[_account])) / 1e18) + rewards[_account];
-    }
+    /// @inheritdoc	IXSykStaking
+    function claim(uint256 _chainId, address _account) public returns (uint256 reward) {
+        bytes32 accountId;
+        uint256 chainId = _chainId;
 
-    /// @notice Claims earned rewards for a user.
-    /// @param _account Address of the user claiming rewards.
-    /// @return reward The amount of rewards claimed.
-    function claim(address _account) public updateReward(_account) returns (uint256 reward) {
         if (!bridgeAdapters[msg.sender]) {
             if (_account != msg.sender) revert XSykStaking_AccountNotSender();
+            chainId = block.chainid;
+            accountId = keccak256(abi.encode(chainId, msg.sender));
+        } else {
+            accountId = keccak256(abi.encode(chainId, _account));
         }
 
-        reward = rewards[_account];
+        updateReward(accountId);
+
+        reward = rewards[accountId];
         if (reward > 0) {
-            rewards[_account] = 0;
+            rewards[accountId] = 0;
             if (!bridgeAdapters[msg.sender]) {
                 uint256 xSykReward = (reward * xSykRewardPercentage) / 100;
                 if (xSykReward > 0) {
@@ -182,17 +201,24 @@ contract XSykStaking is IXSykStaking, AccessManaged {
             }
         }
 
-        emit Claimed(_account, reward);
+        emit Claimed(_account, reward, chainId);
     }
 
-    /// @notice Withdraws staked tokens and claims rewards for a user.
-    /// @param _account Address of the user exiting the staking contract.
-    /// @return balance The staked token balance returned.
-    /// @return reward The rewards claimed.
-    function exit(address _account) external updateReward(_account) returns (uint256 balance, uint256 reward) {
-        balance = balanceOf[_account];
-        unstake(balanceOf[_account], _account);
-        reward = claim(_account);
+    /// @inheritdoc	IXSykStaking
+    function exit(uint256 _chainId, address _account) external returns (uint256 balance, uint256 reward) {
+        bytes32 accountId;
+        uint256 chainId = _chainId;
+
+        if (!bridgeAdapters[msg.sender]) {
+            chainId = block.chainid;
+            accountId = keccak256(abi.encode(chainId, msg.sender));
+        } else {
+            accountId = keccak256(abi.encode(chainId, _account));
+        }
+
+        balance = balanceOf[accountId];
+        unstake(balance, chainId, _account);
+        reward = claim(chainId, _account);
     }
 
     /// @notice Sets the duration over which rewards are distributed.
@@ -208,7 +234,9 @@ contract XSykStaking is IXSykStaking, AccessManaged {
     /// @notice Notifies the contract of the amount of rewards to be distributed over the set duration.
     /// @dev Restricted to contract administrators.
     /// @param _amount The amount of rewards to distribute.
-    function notifyRewardAmount(uint256 _amount) external restricted updateReward(address(0)) {
+    function notifyRewardAmount(uint256 _amount) external restricted {
+        updateReward(0);
+
         if (block.timestamp >= finishAt) {
             rewardRate = _amount / duration;
         } else {
