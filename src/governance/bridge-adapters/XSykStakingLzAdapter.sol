@@ -3,6 +3,7 @@ pragma solidity ^0.8.22;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {OApp, Origin, MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {OAppOptionsType3} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp//libs/OAppOptionsType3.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IXSykStakingLzAdapter} from "../../interfaces/IXSykStakingLzAdapter.sol";
@@ -17,7 +18,7 @@ import {Test, console} from "forge-std/Test.sol";
 
 /// @title XSykStakingLzAdapter Contract
 /// @notice This contract facilitates staking, unstaking, claiming rewards, and exiting for xSYK tokens through LayerZero messaging.
-contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
+contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     using SafeERC20 for IERC20;
     using OptionsBuilder for bytes;
 
@@ -39,16 +40,16 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
     uint32 public immutable dstEid;
 
     /// @notice Stake type in uint8
-    uint8 public constant STAKE_TYPE = 1;
+    uint16 public constant STAKE_TYPE = 1;
 
     /// @notice Unstake type in uint8
-    uint8 public constant UNSTAKE_TYPE = 2;
+    uint16 public constant UNSTAKE_TYPE = 2;
 
     /// @notice Claim type in uint8
-    uint8 public constant CLAIM_TYPE = 3;
+    uint16 public constant CLAIM_TYPE = 3;
 
     /// @notice Exit type in uint8
-    uint8 public constant EXIT_TYPE = 4;
+    uint16 public constant EXIT_TYPE = 4;
 
     /// @notice account => balance
     mapping(address => uint256) public balanceOf;
@@ -87,6 +88,18 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
 
     /*==== PUBLIC FUNCTIONS ====*/
 
+    function quote(uint16 _msgType, uint256 _amount, bytes calldata _options)
+        external
+        view
+        returns (MessagingFee memory msgFee)
+    {
+        // Craft the message
+        bytes memory message = abi.encode(_msgType, _amount, block.chainid, msg.sender);
+
+        // Calculates the LayerZero fee for the send() operation.
+        return _quote(dstEid, message, _options, false);
+    }
+
     /// @inheritdoc IXSykStakingLzAdapter
     function stake(uint256 _amount, bytes calldata _options)
         external
@@ -108,7 +121,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
-            _options, // Message execution options (e.g., gas to use on destination).
+            combineOptions(dstEid, STAKE_TYPE, _options), // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
@@ -129,7 +142,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
-            _options, // Message execution options (e.g., gas to use on destination).
+            combineOptions(dstEid, UNSTAKE_TYPE, _options), // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
@@ -144,7 +157,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
-            _options, // Message execution options (e.g., gas to use on destination).
+            combineOptions(dstEid, CLAIM_TYPE, _options), // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
@@ -163,7 +176,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
-            _options, // Message execution options (e.g., gas to use on destination).
+            combineOptions(dstEid, EXIT_TYPE, _options), // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
@@ -177,8 +190,8 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp {
         internal
         override
     {
-        (uint8 MSG_TYPE, uint256 _amount, uint256 _chainId, address _account) =
-            abi.decode(_message, (uint8, uint256, uint256, address));
+        (uint16 MSG_TYPE, uint256 _amount, uint256 _chainId, address _account) =
+            abi.decode(_message, (uint16, uint256, uint256, address));
         if (MSG_TYPE == 1) {
             xSykStaking.stake(_amount, _chainId, _account);
         } else if (MSG_TYPE == 2) {

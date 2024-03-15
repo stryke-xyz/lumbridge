@@ -42,7 +42,7 @@ interface IXSykStakingLzAdapter {
     /// @param account Address of the account.
     /// @param guid Identifier for the LayerZero message.
     /// @param srcEid Source Endpoint ID.
-    event MessageReceived(uint8 messageType, uint256 amount, address account, bytes32 guid, uint32 srcEid);
+    event MessageReceived(uint16 messageType, uint256 amount, address account, bytes32 guid, uint32 srcEid);
 
     /*==== ERRORS ====*/
 
