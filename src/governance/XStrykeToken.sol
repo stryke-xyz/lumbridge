@@ -7,7 +7,7 @@ import {ERC20PausableUpgradeable} from
 import {AccessManagedUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ContractWhitelist} from "../helpers/ContractWhitelist.sol";
 
@@ -25,7 +25,7 @@ contract XStrykeToken is
     ERC20PausableUpgradeable,
     AccessManagedUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard
+    ReentrancyGuardUpgradeable
 {
     using SafeERC20 for IStrykeTokenBase;
 
@@ -61,9 +61,13 @@ contract XStrykeToken is
     /// @param _syk Address of the SYK token.
     /// @param _initialAuthority Address of the AccessManaged contract.
     function initialize(address _syk, address _initialAuthority) public initializer {
+        __ERC20_init("XStrykeToken", "xSYK");
+        __ERC20Pausable_init();
+        __AccessManaged_init(_initialAuthority);
+        __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
         syk = IStrykeTokenBase(_syk);
         redeemSettings = RedeemSettings({minRatio: 50, maxRatio: 100, minDuration: 7 days, maxDuration: 180 days});
-        __AccessManaged_init(_initialAuthority);
         // Set this address to be in the whitelist
         whitelist[address(this)] = true;
         // Set the deployer as excess receiver

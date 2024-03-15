@@ -117,7 +117,7 @@ contract XSykStaking is IXSykStaking, AccessManaged {
 
     /// @inheritdoc	IXSykStaking
     function stake(uint256 _amount, uint256 _chainId, address _account) external {
-        if (_amount < 0) revert XSykStaking_AmountZero();
+        if (_amount == 0) revert XSykStaking_AmountZero();
 
         bytes32 accountId;
         uint256 chainId = _chainId;
@@ -141,7 +141,7 @@ contract XSykStaking is IXSykStaking, AccessManaged {
 
     /// @inheritdoc	IXSykStaking
     function unstake(uint256 _amount, uint256 _chainId, address _account) public {
-        if (_amount < 0) revert XSykStaking_AmountZero();
+        if (_amount == 0) revert XSykStaking_AmountZero();
 
         bytes32 accountId;
         uint256 chainId = _chainId;
@@ -244,7 +244,7 @@ contract XSykStaking is IXSykStaking, AccessManaged {
             rewardRate = (_amount + remainingRewards) / duration;
         }
 
-        if (rewardRate < 0) revert XSykStaking_RewardRateZero();
+        if (rewardRate == 0) revert XSykStaking_RewardRateZero();
         if (rewardRate * duration > rewardsToken.balanceOf(address(this))) revert XSykStaking_NotEnoughRewardBalance();
 
         finishAt = block.timestamp + duration;

@@ -163,7 +163,9 @@ contract GaugeController is IGaugeController, AccessManaged {
     /// @inheritdoc	IGaugeController
     function computeRewards(bytes32 _id, uint256 _epoch) public view returns (uint256 reward) {
         // Compute the rewards from the voteable rewards
-        reward = totalVoteableReward[_epoch] * gaugePowersPerEpoch[_epoch][_id] / totalPowerUsedPerEpoch[_epoch];
+        if (totalPowerUsedPerEpoch[_epoch] != 0) {
+            reward = totalVoteableReward[_epoch] * gaugePowersPerEpoch[_epoch][_id] / totalPowerUsedPerEpoch[_epoch];
+        }
 
         // Add base reward
         reward += gauges[_id].baseReward;

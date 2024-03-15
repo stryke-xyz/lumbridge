@@ -67,6 +67,9 @@ interface IXSykStaking {
     /// @param _accountId ID of the account.
     function balanceOf(bytes32 _accountId) external returns (uint256);
 
+    /// @notice Returns the xSYK Reward Percentage.
+    function xSykRewardPercentage() external returns (uint256);
+
     /// @notice Allows a user or a bridge adapter to stake tokens on behalf of a user.
     /// @param _amount Amount of tokens to stake.
     /// @param _chainId Chain ID from where the user is staking.

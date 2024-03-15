@@ -33,9 +33,6 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     /// @notice SYK Bridge Adapter contract
     ISykLzAdapter public immutable sykLzAdapter;
 
-    /// @notice xSYK reward conversion percentage.
-    uint256 public xSykRewardPercentage;
-
     /// @notice Destination LayerZero endpoint ID of the chain where the XSykStaking contract is deployed
     uint32 public immutable dstEid;
 
@@ -73,17 +70,6 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         xSyk = IERC20(_xSyk);
         sykLzAdapter = ISykLzAdapter(_sykLzAdapter);
         dstEid = _dstEid;
-    }
-
-    /*==== RESTRICTED FUNCTIONS ====*/
-
-    /// @notice Updates xSYK reward conversion percentage.
-    /// @dev Restricted to contract administrators.
-    /// @param _xSykRewardPercentage The percentage of SYK rewards to be sent in xSYK
-    function updateXSykRewardPercentage(uint256 _xSykRewardPercentage) external onlyOwner {
-        xSykRewardPercentage = _xSykRewardPercentage;
-
-        emit XSykRewardPercentageUpdated(_xSykRewardPercentage);
     }
 
     /*==== PUBLIC FUNCTIONS ====*/
@@ -198,11 +184,11 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
             xSykStaking.unstake(_amount, _chainId, _account);
         } else if (MSG_TYPE == 3) {
             uint256 reward = xSykStaking.claim(_chainId, _account);
-            uint256 xSykReward = (reward * xSykRewardPercentage) / 100;
+            uint256 xSykReward = (reward * xSykStaking.xSykRewardPercentage()) / 100;
             _sendSyk(_origin.srcEid, reward, xSykReward, _account);
         } else if (MSG_TYPE == 4) {
             (, uint256 reward) = xSykStaking.exit(_chainId, _account);
-            uint256 xSykReward = (reward * xSykRewardPercentage) / 100;
+            uint256 xSykReward = (reward * xSykStaking.xSykRewardPercentage()) / 100;
             _sendSyk(_origin.srcEid, reward, xSykReward, _account);
         }
 

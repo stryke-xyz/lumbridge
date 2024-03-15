@@ -43,8 +43,19 @@ contract SykBridgeController is ISykBridgeController, AccessManaged {
     /// @notice Function to change the duration when the limits for a bridge replenish
     /// @dev Can only be called by admin
     /// @param _duration The duration
-    function setDuration(uint256 _duration) public restricted {
+    function setDuration(uint256 _duration, address[] calldata _bridges) public restricted {
         duration = _duration;
+
+        uint256 i;
+        uint256 bridgesLength = _bridges.length;
+        for (; i < bridgesLength;) {
+            Bridge storage bridge = bridges[_bridges[i]];
+            bridge.minterParams.ratePerSecond = bridge.minterParams.maxLimit / _duration;
+            bridge.burnerParams.ratePerSecond = bridge.burnerParams.maxLimit / _duration;
+            unchecked {
+                ++i;
+            }
+        }
 
         emit DurationUpdated(_duration);
     }

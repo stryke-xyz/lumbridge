@@ -24,6 +24,8 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
     /// @inheritdoc	IStrykeTokenRoot
     uint256 public maxSupply;
 
+    uint256 public totalMinted;
+
     /// @notice A constant representing 1 year in seconds
     uint256 public constant ONE_YEAR = 365 days;
 
@@ -46,12 +48,12 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
 
     /// @inheritdoc	IStrykeTokenRoot
     function availableSupply() public view returns (uint256) {
-        return Math.min(totalSupply() + ((block.timestamp - genesis)) * emissionRatePerSecond, maxSupply);
+        return Math.min(totalMinted + ((block.timestamp - genesis)) * emissionRatePerSecond, maxSupply);
     }
 
     /// @inheritdoc	IStrykeTokenRoot
     function stryke(uint256 _amount) external restricted {
-        if (totalSupply() + _amount > availableSupply()) {
+        if (totalMinted + _amount > availableSupply()) {
             revert StrykeTokenRoot_InflationExceeding();
         }
         _mint(msg.sender, _amount);
@@ -63,5 +65,13 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
         emissionRatePerSecond = _inflationPerYear / ONE_YEAR;
 
         emit InflationPerYearSet(_inflationPerYear, emissionRatePerSecond);
+    }
+
+    function _update(address from, address to, uint256 value) internal override(StrykeTokenBase) {
+        if (from == address(0)) {
+            totalMinted += value;
+        }
+
+        super._update(from, to, value);
     }
 }

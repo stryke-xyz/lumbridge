@@ -492,7 +492,6 @@ contract IntegrationTest is Test {
         assertEq(xSykRoot.balanceOf(john.addr), 175999999999999938400);
         vm.stopPrank();
 
-        xSykStakingLzAdapterRoot.updateXSykRewardPercentage(50);
         xSykBsc.updateContractWhitelist(address(sykLzAdapterBsc), true);
 
         // Doe unstakes and gets reward from BSC
