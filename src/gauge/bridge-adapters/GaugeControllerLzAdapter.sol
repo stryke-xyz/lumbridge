@@ -32,6 +32,10 @@ contract GaugeControllerLzAdapter is OApp {
     /// @notice Destination endpoint ID for cross-chain messages.
     uint32 public immutable dstEid;
 
+    uint256 public immutable genesis;
+
+    uint256 public constant EPOCH_LENGTH = 7 days;
+
     /// @notice Emitted when a vote is cast via LayerZero.
     /// @param voteParams The parameters of the vote cast.
     /// @param msgReceipt The LayerZero messaging receipt.
@@ -66,13 +70,20 @@ contract GaugeControllerLzAdapter is OApp {
         address _xSyk,
         address _sykLzAdapter,
         address _xSykStakingLzAdapter,
-        uint32 _dstEid
+        uint32 _dstEid,
+        uint256 _genesis
     ) OApp(_endpoint, _owner) Ownable(_owner) {
         gaugeController = IGaugeController(_gaugeController);
         xSyk = IERC20(_xSyk);
         sykLzAdapter = ISykLzAdapter(_sykLzAdapter);
         xSykStakingLzAdapter = IXSykStakingLzAdapter(_xSykStakingLzAdapter);
         dstEid = _dstEid;
+        // To be set to the same value inside of the GaugeController
+        genesis = _genesis;
+    }
+
+    function epoch() public view returns (uint256 _epoch) {
+        _epoch = (block.timestamp - genesis) / EPOCH_LENGTH;
     }
 
     /// @notice Casts a vote for a gauge across chains using LayerZero.
@@ -97,6 +108,7 @@ contract GaugeControllerLzAdapter is OApp {
         VoteParams memory voteParams = VoteParams({
             power: _power,
             totalPower: totalPower,
+            epoch: epoch(),
             accountId: keccak256(abi.encode(block.chainid, msg.sender)),
             gaugeId: _gaugeId
         });

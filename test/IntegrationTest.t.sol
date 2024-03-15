@@ -119,8 +119,15 @@ contract IntegrationTest is Test {
             new XSykStaking(address(xSykRoot), address(sykRoot), address(xSykRoot), address(accessManagerRoot));
         xSykRoot.updateWhitelist(address(xSykStaking), true);
 
+        sykRoot.setInflationPerYear(1_000_000 ether);
+
+        // Move 7 days ahead in time to allow 1 week of inflation to process
+        skip(7 days);
+
         gaugeController =
             new GaugeController(address(sykRoot), address(xSykRoot), address(xSykStaking), address(accessManagerRoot));
+
+        gaugeController.setGenesis(block.timestamp);
 
         uint64 MINTER_BURNER_SYK = 1;
 
@@ -174,7 +181,8 @@ contract IntegrationTest is Test {
             address(xSykRoot),
             address(sykLzAdapterRoot),
             address(0),
-            30110
+            30110,
+            gaugeController.genesis()
         );
 
         gaugeControllerLzAdapterBsc = new GaugeControllerLzAdapter(
@@ -184,7 +192,8 @@ contract IntegrationTest is Test {
             address(xSykBsc),
             address(0),
             address(xSykStakingLzAdapterBsc),
-            30110
+            30110,
+            gaugeController.genesis()
         );
 
         gaugeController.updateBridgeAdapter(address(gaugeControllerLzAdapterRoot), true);
@@ -211,11 +220,6 @@ contract IntegrationTest is Test {
 
         xSykStakingLzAdapterRoot.setPeer(30102, addressToBytes32(address(xSykStakingLzAdapterBsc)));
         xSykStakingLzAdapterBsc.setPeer(30110, addressToBytes32(address(xSykStakingLzAdapterRoot)));
-
-        sykRoot.setInflationPerYear(1_000_000 ether);
-
-        // Move 7 days ahead in time to allow 1 week of inflation to process
-        skip(7 days);
     }
 
     function test_bridgeToAndFromBsc() public {
@@ -311,7 +315,7 @@ contract IntegrationTest is Test {
         bytes32 gaugeAId = gaugeController.addGauge(gaugeAInfo);
         bytes32 gaugeBId = gaugeController.addGauge(gaugeBInfo);
 
-        gaugeController.setGenesis(block.timestamp);
+        console.log(gaugeController.epoch());
 
         // Mint SYK to john and doe on arbitrum
         sykRoot.mint(john.addr, 1 ether);
@@ -324,6 +328,7 @@ contract IntegrationTest is Test {
             VoteParams({
                 power: 1 ether,
                 totalPower: 1 ether,
+                epoch: 0,
                 gaugeId: gaugeAId,
                 accountId: keccak256(abi.encode(42161, john.addr))
             })
@@ -337,6 +342,7 @@ contract IntegrationTest is Test {
             VoteParams({
                 power: 2 ether,
                 totalPower: 2 ether,
+                epoch: 0,
                 gaugeId: gaugeBId,
                 accountId: keccak256(abi.encode(42161, doe.addr))
             })
@@ -384,8 +390,6 @@ contract IntegrationTest is Test {
         bytes32 gaugeAId = gaugeController.addGauge(gaugeAInfo);
         bytes32 gaugeBId = gaugeController.addGauge(gaugeBInfo);
 
-        gaugeController.setGenesis(block.timestamp);
-
         // Mint SYK to john on arbitrum and doe on bsc
         sykRoot.mint(john.addr, 1 ether);
         sykBsc.mint(doe.addr, 2 ether);
@@ -398,6 +402,7 @@ contract IntegrationTest is Test {
             VoteParams({
                 power: 1 ether,
                 totalPower: 1 ether,
+                epoch: gaugeController.epoch(),
                 gaugeId: gaugeAId,
                 accountId: keccak256(abi.encode(42161, john.addr))
             })
@@ -610,8 +615,6 @@ contract IntegrationTest is Test {
         bytes32 gaugeAId = gaugeController.addGauge(gaugeAInfo);
         bytes32 gaugeBId = gaugeController.addGauge(gaugeBInfo);
 
-        gaugeController.setGenesis(block.timestamp);
-
         // Mint SYK to john on arbitrum and doe on bsc
         sykRoot.mint(john.addr, 1 ether);
         sykBsc.mint(doe.addr, 2 ether);
@@ -626,6 +629,7 @@ contract IntegrationTest is Test {
             VoteParams({
                 power: 1 ether,
                 totalPower: 1 ether,
+                epoch: 0,
                 gaugeId: gaugeAId,
                 accountId: keccak256(abi.encode(42161, john.addr))
             })

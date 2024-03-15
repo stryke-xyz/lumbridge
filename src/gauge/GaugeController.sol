@@ -146,6 +146,10 @@ contract GaugeController is IGaugeController, AccessManaged {
 
     /// @inheritdoc	IGaugeController
     function vote(VoteParams calldata _voteParams) external {
+        if (_voteParams.epoch != epoch()) {
+            revert GaugeController_IncorrectEpoch();
+        }
+
         if (gauges[_voteParams.gaugeId].gaugeAddress == address(0)) {
             revert GaugeController_GaugeNotFound();
         }
