@@ -14,7 +14,6 @@ import {IXSykStaking} from "../../interfaces/IXSykStaking.sol";
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {Test, console} from "forge-std/Test.sol";
 
 /// @title XSykStakingLzAdapter Contract
 /// @notice This contract facilitates staking, unstaking, claiming rewards, and exiting for xSYK tokens through LayerZero messaging.

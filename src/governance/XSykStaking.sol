@@ -8,7 +8,6 @@ import {IXStrykeToken} from "../interfaces/IXStrykeToken.sol";
 import {IXSykStaking} from "../interfaces/IXSykStaking.sol";
 
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Test, console} from "forge-std/Test.sol";
 
 /// @title XSyk Staking Contract
 /// @notice Enables staking of a specific token and distribution of rewards over a fixed duration.
@@ -152,7 +151,6 @@ contract XSykStaking is IXSykStaking, AccessManaged {
             chainId = block.chainid;
             accountId = keccak256(abi.encode(chainId, msg.sender));
         } else {
-            chainId = block.chainid;
             accountId = keccak256(abi.encode(chainId, _account));
         }
 
