@@ -13,9 +13,6 @@ abstract contract ContractWhitelist {
     /// @dev Error indicating that the address provided is not a contract address.
     error ContractWhitelist_AddressNotContract();
 
-    /// @dev Error indicating that the contract is already whitelisted.
-    error ContractWhitelist_AlreadyWhitelisted();
-
     /// @dev Error indicating that the contract is not whitelisted.
     error ContractWhitelist_NotWhitelisted();
 
@@ -26,7 +23,6 @@ abstract contract ContractWhitelist {
     /// @param _add boolean for adding or removing
     function updateContractWhitelist(address _contract, bool _add) public virtual {
         if (!isContract(_contract)) revert ContractWhitelist_AddressNotContract();
-        if (whitelistedContracts[_contract]) revert ContractWhitelist_AlreadyWhitelisted();
 
         whitelistedContracts[_contract] = _add;
 
