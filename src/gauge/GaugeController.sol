@@ -134,9 +134,15 @@ contract GaugeController is IGaugeController, AccessManaged {
     function removeGauge(bytes32 _gaugeId) external restricted {
         emit GaugeRemoved(gauges[_gaugeId]);
 
+        uint256 _epoch = epoch();
+
         totalBaseRewardPerEpoch -= gauges[_gaugeId].baseReward;
 
         totalVoteableRewardPerEpoch = totalRewardPerEpoch - totalBaseRewardPerEpoch;
+
+        totalPowerUsedPerEpoch[_epoch] -= gaugePowersPerEpoch[_epoch][_gaugeId];
+
+        gaugePowersPerEpoch[_epoch][_gaugeId] = 0;
 
         gauges[_gaugeId] = GaugeInfo({gaugeType: 0, chainId: 0, baseReward: 0, gaugeAddress: address(0)});
     }
