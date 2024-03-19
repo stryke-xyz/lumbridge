@@ -4,6 +4,7 @@ pragma solidity =0.8.23;
 import {StrykeTokenBase} from "./StrykeTokenBase.sol";
 
 import {IStrykeTokenRoot} from "../interfaces/IStrykeTokenRoot.sol";
+import {IStrykeTokenBase} from "../interfaces/IStrykeTokenBase.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -24,6 +25,7 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
     /// @inheritdoc	IStrykeTokenRoot
     uint256 public maxSupply;
 
+    /// @dev The amount of tokens minted using the mint() fn which is not inflation controlled
     uint256 public totalMinted;
 
     /// @notice A constant representing 1 year in seconds
@@ -56,6 +58,7 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
         if (totalMinted + _amount > availableSupply()) {
             revert StrykeTokenRoot_InflationExceeding();
         }
+
         _mint(msg.sender, _amount);
     }
 
@@ -67,11 +70,10 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
         emit InflationPerYearSet(_inflationPerYear, emissionRatePerSecond);
     }
 
-    function _update(address from, address to, uint256 value) internal override(StrykeTokenBase) {
-        if (from == address(0)) {
-            totalMinted += value;
-        }
+    /// @inheritdoc	IStrykeTokenBase
+    function mint(address _to, uint256 _amount) public override(StrykeTokenBase, IStrykeTokenBase) {
+        totalMinted += _amount;
 
-        super._update(from, to, value);
+        super.mint(_to, _amount);
     }
 }

@@ -25,12 +25,12 @@ abstract contract StrykeTokenBase is
     IStrykeTokenBase
 {
     /// @inheritdoc	IStrykeTokenBase
-    function mint(address _to, uint256 _amount) public restricted {
+    function mint(address _to, uint256 _amount) public virtual restricted {
         _mint(_to, _amount);
     }
 
     /// @inheritdoc	IStrykeTokenBase
-    function burn(address _account, uint256 _amount) public restricted {
+    function burn(address _account, uint256 _amount) public virtual restricted {
         _burn(_account, _amount);
     }
 
