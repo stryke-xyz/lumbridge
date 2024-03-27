@@ -14,7 +14,6 @@ import {IXSykStaking} from "../../interfaces/IXSykStaking.sol";
 import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-
 /// @title XSykStakingLzAdapter Contract
 /// @notice This contract facilitates staking, unstaking, claiming rewards, and exiting for xSYK tokens through LayerZero messaging.
 contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
@@ -82,7 +81,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         bytes memory message = abi.encode(_msgType, _amount, block.chainid, msg.sender);
 
         // Calculates the LayerZero fee for the send() operation.
-        return _quote(dstEid, message, _options, false);
+        return _quote(dstEid, message, combineOptions(dstEid, _msgType, _options), false);
     }
 
     /// @inheritdoc IXSykStakingLzAdapter

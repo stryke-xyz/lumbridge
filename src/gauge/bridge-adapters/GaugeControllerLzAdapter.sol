@@ -3,6 +3,7 @@ pragma solidity ^0.8.22;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {OApp, Origin, MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {OAppOptionsType3} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp//libs/OAppOptionsType3.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ISykLzAdapter, SendParams} from "../../interfaces/ISykLzAdapter.sol";
@@ -14,7 +15,7 @@ import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/
 /// @title GaugeController LayerZero Adapter
 /// @notice Facilitates cross-chain interactions for voting and pulling rewards associated with gauge mechanisms.
 /// @dev Extends `OApp` for LayerZero messaging, enabling cross-chain gauge operations.
-contract GaugeControllerLzAdapter is OApp {
+contract GaugeControllerLzAdapter is OApp, OAppOptionsType3 {
     using OptionsBuilder for bytes;
 
     /// @notice Reference to the GaugeController contract.
@@ -35,6 +36,12 @@ contract GaugeControllerLzAdapter is OApp {
     uint256 public immutable genesis;
 
     uint256 public constant EPOCH_LENGTH = 7 days;
+
+    /// @notice Vote type in uint16
+    uint16 public constant VOTE_TYPE = 1;
+
+    /// @notice Pull type in uint16
+    uint16 public constant PULL_TYPE = 2;
 
     /// @notice Emitted when a vote is cast via LayerZero.
     /// @param voteParams The parameters of the vote cast.
@@ -86,6 +93,25 @@ contract GaugeControllerLzAdapter is OApp {
         _epoch = (block.timestamp - genesis) / EPOCH_LENGTH;
     }
 
+    function quote(
+        uint16 _msgType,
+        VoteParams calldata _voteParams,
+        PullParams calldata _pullParams,
+        bytes calldata _options
+    ) external view returns (MessagingFee memory msgFee) {
+        bytes memory message;
+
+        // Craft the message
+        if (_msgType == VOTE_TYPE) {
+            message = abi.encode(abi.encode(_voteParams), bytes(""));
+        } else {
+            message = abi.encode(bytes(""), abi.encode(_pullParams));
+        }
+
+        // Calculates the LayerZero fee for the send() operation.
+        return _quote(dstEid, message, combineOptions(dstEid, _msgType, _options), false);
+    }
+
     /// @notice Casts a vote for a gauge across chains using LayerZero.
     /// @param _power The amount of power to vote with.
     /// @param _gaugeId The ID of the gauge to vote for.
@@ -118,7 +144,7 @@ contract GaugeControllerLzAdapter is OApp {
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
-            _options, // Message execution options (e.g., gas to use on destination).
+            combineOptions(dstEid, VOTE_TYPE, _options), // Message execution options (e.g., gas to use on destination).
             MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
@@ -145,8 +171,8 @@ contract GaugeControllerLzAdapter is OApp {
         _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
-            _options, // Message execution options (e.g., gas to use on destination).
-            MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
+            combineOptions(dstEid, PULL_TYPE, _options), // Message execution options (e.g., gas to use on destination).
+            MessagingFee(msg.value, 0),
             payable(msg.sender) // The refund address in case the send call reverts.
         );
 
