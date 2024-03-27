@@ -72,7 +72,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
 
     /*==== PUBLIC FUNCTIONS ====*/
 
-    function quote(uint16 _msgType, uint256 _amount, bytes calldata _options)
+    function quote(uint16 _msgType, uint256 _amount, bytes calldata _options, bool _payInLzToken)
         external
         view
         returns (MessagingFee memory msgFee)
@@ -81,11 +81,11 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         bytes memory message = abi.encode(_msgType, _amount, block.chainid, msg.sender);
 
         // Calculates the LayerZero fee for the send() operation.
-        return _quote(dstEid, message, combineOptions(dstEid, _msgType, _options), false);
+        return _quote(dstEid, message, combineOptions(dstEid, _msgType, _options), _payInLzToken);
     }
 
     /// @inheritdoc IXSykStakingLzAdapter
-    function stake(uint256 _amount, bytes calldata _options)
+    function stake(uint256 _amount, MessagingFee calldata _fee, bytes calldata _options)
         external
         payable
         returns (MessagingReceipt memory msgReceipt)
@@ -106,7 +106,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             combineOptions(dstEid, STAKE_TYPE, _options), // Message execution options (e.g., gas to use on destination).
-            MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
+            _fee, // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
 
@@ -114,7 +114,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     }
 
     /// @inheritdoc IXSykStakingLzAdapter
-    function unstake(uint256 _amount, bytes calldata _options)
+    function unstake(uint256 _amount, MessagingFee calldata _fee, bytes calldata _options)
         external
         payable
         returns (MessagingReceipt memory msgReceipt)
@@ -127,7 +127,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             combineOptions(dstEid, UNSTAKE_TYPE, _options), // Message execution options (e.g., gas to use on destination).
-            MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
+            _fee, // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
 
@@ -135,14 +135,18 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     }
 
     /// @inheritdoc IXSykStakingLzAdapter
-    function claim(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt) {
+    function claim(MessagingFee calldata _fee, bytes calldata _options)
+        external
+        payable
+        returns (MessagingReceipt memory msgReceipt)
+    {
         bytes memory payload = abi.encode(CLAIM_TYPE, 0, block.chainid, msg.sender);
 
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             combineOptions(dstEid, CLAIM_TYPE, _options), // Message execution options (e.g., gas to use on destination).
-            MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
+            _fee, // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
 
@@ -150,7 +154,11 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     }
 
     /// @inheritdoc IXSykStakingLzAdapter
-    function exit(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt) {
+    function exit(MessagingFee calldata _fee, bytes calldata _options)
+        external
+        payable
+        returns (MessagingReceipt memory msgReceipt)
+    {
         uint256 accountBalance = balanceOf[msg.sender];
 
         _unstake(msg.sender, balanceOf[msg.sender]);
@@ -161,7 +169,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             combineOptions(dstEid, EXIT_TYPE, _options), // Message execution options (e.g., gas to use on destination).
-            MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
+            _fee, // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
 

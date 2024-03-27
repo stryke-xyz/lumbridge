@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.22;
 
-import {MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {MessagingReceipt, MessagingFee} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
 
 interface IXSykStakingLzAdapter {
     /*==== EVENTS ====*/
@@ -61,29 +61,47 @@ interface IXSykStakingLzAdapter {
 
     /// @notice Allows users to stake xSYK tokens and triggers a cross-chain message to the destination chain.
     /// @param _amount The amount of xSYK tokens to stake.
+    /// @param _fee The calculated fee for the send() operation.
+    ///      - nativeFee: The native fee.
+    ///      - lzTokenFee: The lzToken fee.
     /// @param _options LayerZero message options for cross-chain communication.
     /// @return msgReceipt The receipt of the LayerZero message.
-    function stake(uint256 _amount, bytes calldata _options)
+    function stake(uint256 _amount, MessagingFee calldata _fee, bytes calldata _options)
         external
         payable
         returns (MessagingReceipt memory msgReceipt);
 
     /// @notice Allows users to unstake xSYK tokens and triggers a cross-chain message to the destination chain.
     /// @param _amount The amount of xSYK tokens to unstake.
+    /// @param _fee The calculated fee for the send() operation.
+    ///      - nativeFee: The native fee.
+    ///      - lzTokenFee: The lzToken fee.
     /// @param _options LayerZero message options for cross-chain communication.
     /// @return msgReceipt The receipt of the LayerZero message.
-    function unstake(uint256 _amount, bytes calldata _options)
+    function unstake(uint256 _amount, MessagingFee calldata _fee, bytes calldata _options)
         external
         payable
         returns (MessagingReceipt memory msgReceipt);
 
     /// @notice Allows users to claim their rewards, triggering a cross-chain message to handle the reward distribution.
+    /// @param _fee The calculated fee for the send() operation.
+    ///      - nativeFee: The native fee.
+    ///      - lzTokenFee: The lzToken fee.
     /// @param _options LayerZero message options for cross-chain communication.
     /// @return msgReceipt The receipt of the LayerZero message.
-    function claim(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt);
+    function claim(MessagingFee calldata _fee, bytes calldata _options)
+        external
+        payable
+        returns (MessagingReceipt memory msgReceipt);
 
     /// @notice Allows users to exit the staking pool, unstaking their tokens and claiming any rewards in a single transaction.
+    /// @param _fee The calculated fee for the send() operation.
+    ///      - nativeFee: The native fee.
+    ///      - lzTokenFee: The lzToken fee.
     /// @param _options LayerZero message options for cross-chain communication.
     /// @return msgReceipt The receipt of the LayerZero message.
-    function exit(bytes calldata _options) external payable returns (MessagingReceipt memory msgReceipt);
+    function exit(MessagingFee calldata _fee, bytes calldata _options)
+        external
+        payable
+        returns (MessagingReceipt memory msgReceipt);
 }
