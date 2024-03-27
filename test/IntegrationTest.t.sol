@@ -160,6 +160,7 @@ contract IntegrationTest is Test {
         );
 
         rootEndpoint.setDestLzEndpoint(address(sykLzAdapterBsc), address(bscEndpoint));
+
         bscEndpoint.setDestLzEndpoint(address(sykLzAdapterRoot), address(rootEndpoint));
 
         xSykStakingLzAdapterRoot = new XSykStakingLzAdapter(
@@ -477,7 +478,7 @@ contract IntegrationTest is Test {
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykBsc.approve(address(xSykStakingLzAdapterBsc), 1 ether);
         MessagingFee memory _fee =
-            xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 1 ether, options, false);
+            xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 30110, 1 ether, options, false);
         xSykStakingLzAdapterBsc.stake{value: _fee.nativeFee}(1 ether, _fee, options);
         bytes32 doeId = keccak256(abi.encode(56, doe.addr));
         assertEq(xSykStaking.balanceOf(doeId), 1 ether);
@@ -502,8 +503,11 @@ contract IntegrationTest is Test {
         // Doe unstakes and gets reward from BSC
         vm.startPrank(doe.addr, doe.addr);
         vm.chainId(56);
-        options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-        _fee = xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.UNSTAKE_TYPE(), 1 ether, options, false);
+        _fee = xSykStakingLzAdapterRoot.quote(
+            xSykStakingLzAdapterRoot.FINALIZE_UNSTAKE_TYPE(), 30102, 1 ether, options, false
+        );
+        options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, uint128(_fee.nativeFee));
+        _fee = xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.UNSTAKE_TYPE(), 30110, 1 ether, options, false);
         xSykStakingLzAdapterBsc.unstake{value: _fee.nativeFee}(1 ether, _fee, options);
         assertEq(xSykBsc.balanceOf(doe.addr), 1 ether);
         assertEq(xSykStaking.balanceOf(keccak256(abi.encode(56, doe.addr))), 0);
@@ -515,7 +519,7 @@ contract IntegrationTest is Test {
 
         MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
-        _fee = xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.CLAIM_TYPE(), 0, options, false);
+        _fee = xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.CLAIM_TYPE(), 30110, 0, options, false);
         xSykStakingLzAdapterBsc.claim{value: _fee.nativeFee}(_fee, options);
         assertEq(sykBsc.balanceOf(doe.addr), 174999999999999938400);
         assertEq(xSykBsc.balanceOf(doe.addr), 175999999999999938400);
@@ -523,7 +527,7 @@ contract IntegrationTest is Test {
         vm.stopPrank();
     }
 
-    function test_stakingUsingExitCrossChain() public {
+    function test_stakingUsingExit() public {
         xSykStaking.setRewardsDuration(7 days);
 
         uint256 amount = 700 ether;
@@ -545,19 +549,6 @@ contract IntegrationTest is Test {
         assertEq(xSykStaking.balanceOf(keccak256(abi.encode(42161, john.addr))), 1 ether);
         vm.stopPrank();
 
-        // Doe stakes from BSC
-        vm.startPrank(doe.addr, doe.addr);
-        vm.chainId(56);
-        sykBsc.approve(address(xSykBsc), 1 ether);
-        xSykBsc.convert(1 ether, doe.addr);
-        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-        xSykBsc.approve(address(xSykStakingLzAdapterBsc), 1 ether);
-        MessagingFee memory _fee =
-            xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 1 ether, options, false);
-        xSykStakingLzAdapterBsc.stake{value: _fee.nativeFee}(1 ether, _fee, options);
-        assertEq(xSykStaking.balanceOf(keccak256(abi.encode(56, doe.addr))), 1 ether);
-        vm.stopPrank();
-
         // Skip until end of staking period
         skip(7 days);
 
@@ -568,25 +559,7 @@ contract IntegrationTest is Test {
         bytes32 johnId = keccak256(abi.encode(42161, doe.addr));
         assertEq(xSykRoot.balanceOf(john.addr), 1 ether);
         assertEq(xSykStaking.balanceOf(johnId), 0);
-        assertEq(sykRoot.balanceOf(john.addr), 349999999999999876800);
-        vm.stopPrank();
-
-        // Doe exits from BSC
-        vm.startPrank(doe.addr, doe.addr);
-        vm.chainId(56);
-        bytes32 doeId = keccak256(abi.encode(56, doe.addr));
-        uint256 reward = xSykStaking.earned(doeId);
-        options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-        SendParams memory sendParams =
-            SendParams({dstEid: 30102, to: address(doe.addr), amount: reward, options: options, xSykAmount: 0});
-
-        MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
-        options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
-        _fee = xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.EXIT_TYPE(), 0, options, false);
-        xSykStakingLzAdapterBsc.exit{value: _fee.nativeFee}(_fee, options);
-        assertEq(xSykBsc.balanceOf(doe.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(doeId), 0);
-        assertEq(sykBsc.balanceOf(doe.addr), 349999999999999876800);
+        assertEq(sykRoot.balanceOf(john.addr), 699999999999999753600);
         vm.stopPrank();
     }
 
@@ -653,7 +626,7 @@ contract IntegrationTest is Test {
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykBsc.approve(address(xSykStakingLzAdapterBsc), 2 ether);
         MessagingFee memory _fee =
-            xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 2 ether, options, false);
+            xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 30110, 2 ether, options, false);
         xSykStakingLzAdapterBsc.stake{value: _fee.nativeFee}(2 ether, _fee, options);
 
         _fee = gaugeControllerLzAdapterBsc.quoteVote(2 ether, gaugeBId, options, false);

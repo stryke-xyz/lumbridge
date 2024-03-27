@@ -93,15 +93,4 @@ interface IXSykStakingLzAdapter {
         external
         payable
         returns (MessagingReceipt memory msgReceipt);
-
-    /// @notice Allows users to exit the staking pool, unstaking their tokens and claiming any rewards in a single transaction.
-    /// @param _fee The calculated fee for the send() operation.
-    ///      - nativeFee: The native fee.
-    ///      - lzTokenFee: The lzToken fee.
-    /// @param _options LayerZero message options for cross-chain communication.
-    /// @return msgReceipt The receipt of the LayerZero message.
-    function exit(MessagingFee calldata _fee, bytes calldata _options)
-        external
-        payable
-        returns (MessagingReceipt memory msgReceipt);
 }

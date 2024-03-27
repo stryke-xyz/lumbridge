@@ -34,17 +34,17 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     /// @notice Destination LayerZero endpoint ID of the chain where the XSykStaking contract is deployed
     uint32 public immutable dstEid;
 
-    /// @notice Stake type in uint8
-    uint16 public constant STAKE_TYPE = 1;
+    /// @notice Stake type in uint16
+    uint16 public constant STAKE_TYPE = 0;
 
-    /// @notice Unstake type in uint8
-    uint16 public constant UNSTAKE_TYPE = 2;
+    /// @notice Unstake type in uint16
+    uint16 public constant UNSTAKE_TYPE = 1;
 
-    /// @notice Claim type in uint8
-    uint16 public constant CLAIM_TYPE = 3;
+    /// @notice Claim type in uint16
+    uint16 public constant CLAIM_TYPE = 2;
 
-    /// @notice Exit type in uint8
-    uint16 public constant EXIT_TYPE = 4;
+    /// @notice Finalize Unstake type in uint16
+    uint16 public constant FINALIZE_UNSTAKE_TYPE = 3;
 
     /// @notice account => balance
     mapping(address => uint256) public balanceOf;
@@ -72,8 +72,8 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
 
     /*==== PUBLIC FUNCTIONS ====*/
 
-    function quote(uint16 _msgType, uint256 _amount, bytes calldata _options, bool _payInLzToken)
-        external
+    function quote(uint16 _msgType, uint32 _dstEid, uint256 _amount, bytes memory _options, bool _payInLzToken)
+        public
         view
         returns (MessagingFee memory msgFee)
     {
@@ -81,7 +81,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         bytes memory message = abi.encode(_msgType, _amount, block.chainid, msg.sender);
 
         // Calculates the LayerZero fee for the send() operation.
-        return _quote(dstEid, message, combineOptions(dstEid, _msgType, _options), _payInLzToken);
+        return _quote(_dstEid, message, _options, _payInLzToken);
     }
 
     /// @inheritdoc IXSykStakingLzAdapter
@@ -119,7 +119,7 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         payable
         returns (MessagingReceipt memory msgReceipt)
     {
-        _unstake(msg.sender, _amount);
+        // _unstake(msg.sender, _amount);
 
         bytes memory payload = abi.encode(UNSTAKE_TYPE, _amount, block.chainid, msg.sender);
 
@@ -153,29 +153,6 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         emit Claimed(msg.sender, msgReceipt);
     }
 
-    /// @inheritdoc IXSykStakingLzAdapter
-    function exit(MessagingFee calldata _fee, bytes calldata _options)
-        external
-        payable
-        returns (MessagingReceipt memory msgReceipt)
-    {
-        uint256 accountBalance = balanceOf[msg.sender];
-
-        _unstake(msg.sender, balanceOf[msg.sender]);
-
-        bytes memory payload = abi.encode(EXIT_TYPE, 0, block.chainid, msg.sender);
-
-        msgReceipt = _lzSend(
-            dstEid, // Destination chain's endpoint ID.
-            payload, // Encoded message payload being sent.
-            combineOptions(dstEid, EXIT_TYPE, _options), // Message execution options (e.g., gas to use on destination).
-            _fee, // Fee struct containing native gas and ZRO token.
-            payable(msg.sender) // The refund address in case the send call reverts.
-        );
-
-        emit Exited(msg.sender, accountBalance, msgReceipt);
-    }
-
     /*==== INTERNAL FUNCTIONS ====*/
 
     function _lzReceive(Origin calldata _origin, bytes32 _guid, bytes calldata _message, address, bytes calldata)
@@ -184,24 +161,37 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     {
         (uint16 MSG_TYPE, uint256 _amount, uint256 _chainId, address _account) =
             abi.decode(_message, (uint16, uint256, uint256, address));
-        if (MSG_TYPE == 1) {
+        if (MSG_TYPE == 0) {
             xSykStaking.stake(_amount, _chainId, _account);
-        } else if (MSG_TYPE == 2) {
+        } else if (MSG_TYPE == 1) {
+            // ABA Message Pattern
             xSykStaking.unstake(_amount, _chainId, _account);
-        } else if (MSG_TYPE == 3) {
+
+            bytes memory payload = abi.encode(FINALIZE_UNSTAKE_TYPE, _amount, _chainId, _account);
+
+            bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
+
+            MessagingFee memory msgFee = quote(FINALIZE_UNSTAKE_TYPE, _origin.srcEid, _amount, options, false);
+
+            _lzSend(
+                _origin.srcEid, // Destination chain's endpoint ID.
+                payload, // Encoded message payload being sent.
+                options, // Message execution options (e.g., gas to use on destination).
+                msgFee, // Fee struct containing native gas and ZRO token.
+                address(this) // The refund address in case the send call reverts.
+            );
+        } else if (MSG_TYPE == 2) {
             uint256 reward = xSykStaking.claim(_chainId, _account);
             uint256 xSykReward = (reward * xSykStaking.xSykRewardPercentage()) / 100;
             _sendSyk(_origin.srcEid, reward, xSykReward, _account);
-        } else if (MSG_TYPE == 4) {
-            (, uint256 reward) = xSykStaking.exit(_chainId, _account);
-            uint256 xSykReward = (reward * xSykStaking.xSykRewardPercentage()) / 100;
-            _sendSyk(_origin.srcEid, reward, xSykReward, _account);
+        } else if (MSG_TYPE == 3) {
+            _finalizeUnstake(_account, _amount);
         }
 
         emit MessageReceived(MSG_TYPE, _amount, _account, _guid, _origin.srcEid);
     }
 
-    function _unstake(address _account, uint256 _amount) private {
+    function _finalizeUnstake(address _account, uint256 _amount) private {
         uint256 balance = balanceOf[_account];
 
         if (balance < _amount) {
