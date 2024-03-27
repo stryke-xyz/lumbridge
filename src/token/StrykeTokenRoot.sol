@@ -70,8 +70,8 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
         emit InflationPerYearSet(_inflationPerYear, emissionRatePerSecond);
     }
 
-    /// @inheritdoc	IStrykeTokenBase
-    function mint(address _to, uint256 _amount) public override(StrykeTokenBase, IStrykeTokenBase) {
+    /// @inheritdoc	IStrykeTokenRoot
+    function adminMint(address _to, uint256 _amount) external restricted {
         totalMinted += _amount;
 
         super.mint(_to, _amount);

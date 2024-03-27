@@ -31,6 +31,11 @@ interface IStrykeTokenRoot is IStrykeTokenBase {
     /// @param _amount amount of tokens to mint
     function stryke(uint256 _amount) external;
 
+    /// @notice Function to mint tokens that inflate the base supply of the token from its initial conversion of DPX/rDPX
+    /// @param _to address to mint tokens to
+    /// @param _amount amount of tokens to mint
+    function adminMint(address _to, uint256 _amount) external;
+
     /// @notice Function to set token inflation per year
     /// @dev Can only be called by admin
     /// @param _inflationPerYear the inflation per year to set
