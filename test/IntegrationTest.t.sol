@@ -413,7 +413,8 @@ contract IntegrationTest is Test {
         sykBsc.approve(address(xSykBsc), 2 ether);
         xSykBsc.convert(2 ether, doe.addr);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-        gaugeControllerLzAdapterBsc.vote{value: 1 ether}(2 ether, gaugeBId, options);
+        MessagingFee memory _fee = gaugeControllerLzAdapterBsc.quoteVote(2 ether, gaugeBId, options, false);
+        gaugeControllerLzAdapterBsc.vote{value: _fee.nativeFee}(2 ether, gaugeBId, _fee, options);
         vm.stopPrank();
 
         skip(7 days);
@@ -434,7 +435,9 @@ contract IntegrationTest is Test {
 
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
 
-        gaugeControllerLzAdapterBsc.pull{value: 1 ether}(address(gaugeB), 0, options);
+        _fee = gaugeControllerLzAdapterBsc.quotePull(address(gaugeB), 0, options, false);
+
+        gaugeControllerLzAdapterBsc.pull{value: _fee.nativeFee}(address(gaugeB), 0, _fee, options);
 
         gaugeB.pull();
 
@@ -653,8 +656,8 @@ contract IntegrationTest is Test {
             xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 2 ether, options, false);
         xSykStakingLzAdapterBsc.stake{value: _fee.nativeFee}(2 ether, _fee, options);
 
-        _fee = xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 2 ether, options, false);
-        gaugeControllerLzAdapterBsc.vote{value: 1 ether}(2 ether, gaugeBId, options);
+        _fee = gaugeControllerLzAdapterBsc.quoteVote(2 ether, gaugeBId, options, false);
+        gaugeControllerLzAdapterBsc.vote{value: _fee.nativeFee}(2 ether, gaugeBId, _fee, options);
         vm.stopPrank();
 
         skip(7 days);
@@ -674,8 +677,8 @@ contract IntegrationTest is Test {
         MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
 
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
-
-        gaugeControllerLzAdapterBsc.pull{value: 1 ether}(address(gaugeB), 0, options);
+        _fee = gaugeControllerLzAdapterBsc.quotePull(address(gaugeB), 0, options, false);
+        gaugeControllerLzAdapterBsc.pull{value: _fee.nativeFee}(address(gaugeB), 0, _fee, options);
 
         gaugeB.pull();
 

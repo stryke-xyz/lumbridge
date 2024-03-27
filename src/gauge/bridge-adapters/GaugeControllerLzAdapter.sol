@@ -38,10 +38,10 @@ contract GaugeControllerLzAdapter is OApp, OAppOptionsType3 {
     uint256 public constant EPOCH_LENGTH = 7 days;
 
     /// @notice Vote type in uint16
-    uint16 public constant VOTE_TYPE = 1;
+    uint16 public constant VOTE_TYPE = 0;
 
     /// @notice Pull type in uint16
-    uint16 public constant PULL_TYPE = 2;
+    uint16 public constant PULL_TYPE = 1;
 
     /// @notice Emitted when a vote is cast via LayerZero.
     /// @param voteParams The parameters of the vote cast.
@@ -93,59 +93,56 @@ contract GaugeControllerLzAdapter is OApp, OAppOptionsType3 {
         _epoch = (block.timestamp - genesis) / EPOCH_LENGTH;
     }
 
-    function quote(
-        uint16 _msgType,
-        VoteParams calldata _voteParams,
-        PullParams calldata _pullParams,
-        bytes calldata _options
-    ) external view returns (MessagingFee memory msgFee) {
-        bytes memory message;
+    function quoteVote(uint256 _power, bytes32 _gaugeId, bytes calldata _options, bool _payInLzToken)
+        external
+        view
+        returns (MessagingFee memory msgFee)
+    {
+        VoteParams memory voteParams = _buildVoteParams(_power, _gaugeId);
 
         // Craft the message
-        if (_msgType == VOTE_TYPE) {
-            message = abi.encode(abi.encode(_voteParams), bytes(""));
-        } else {
-            message = abi.encode(bytes(""), abi.encode(_pullParams));
-        }
+        bytes memory message = abi.encode(VOTE_TYPE, abi.encode(voteParams));
 
         // Calculates the LayerZero fee for the send() operation.
-        return _quote(dstEid, message, combineOptions(dstEid, _msgType, _options), false);
+        return _quote(dstEid, message, combineOptions(dstEid, VOTE_TYPE, _options), _payInLzToken);
+    }
+
+    function quotePull(address _gaugeAddress, uint256 _epoch, bytes calldata _options, bool _payInLzToken)
+        external
+        view
+        returns (MessagingFee memory msgFee)
+    {
+        PullParams memory pullParams = _buildPullParams(_gaugeAddress, _epoch);
+
+        // Craft the message
+        bytes memory message = abi.encode(PULL_TYPE, abi.encode(pullParams));
+
+        // Calculates the LayerZero fee for the send() operation.
+        return _quote(dstEid, message, combineOptions(dstEid, PULL_TYPE, _options), _payInLzToken);
     }
 
     /// @notice Casts a vote for a gauge across chains using LayerZero.
     /// @param _power The amount of power to vote with.
     /// @param _gaugeId The ID of the gauge to vote for.
+    /// @param _fee The calculated fee for the send() operation.
+    ///      - nativeFee: The native fee.
+    ///      - lzTokenFee: The lzToken fee.
     /// @param _options LayerZero message options for customizing message delivery.
     /// @return msgReceipt The receipt for the LayerZero message.
-    function vote(uint256 _power, bytes32 _gaugeId, bytes calldata _options)
+    function vote(uint256 _power, bytes32 _gaugeId, MessagingFee calldata _fee, bytes calldata _options)
         external
         payable
         returns (MessagingReceipt memory msgReceipt)
     {
-        // Check xSYK balance of the user
-        uint256 totalPower = xSyk.balanceOf(msg.sender);
-        // Check the xSYK staked balance of the user on staking adapter
-        totalPower += xSykStakingLzAdapter.balanceOf(msg.sender);
+        VoteParams memory voteParams = _buildVoteParams(_power, _gaugeId);
 
-        if (totalPower < _power) {
-            revert GaugeControllerLzAdapter_NotEnoughPowerAvailable();
-        }
-
-        VoteParams memory voteParams = VoteParams({
-            power: _power,
-            totalPower: totalPower,
-            epoch: epoch(),
-            accountId: keccak256(abi.encode(block.chainid, msg.sender)),
-            gaugeId: _gaugeId
-        });
-
-        bytes memory payload = abi.encode(abi.encode(voteParams), bytes(""));
+        bytes memory payload = abi.encode(VOTE_TYPE, abi.encode(voteParams));
 
         msgReceipt = _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             combineOptions(dstEid, VOTE_TYPE, _options), // Message execution options (e.g., gas to use on destination).
-            MessagingFee(msg.value, 0), // Fee struct containing native gas and ZRO token.
+            _fee, // Fee struct containing native gas and ZRO token.
             payable(msg.sender) // The refund address in case the send call reverts.
         );
 
@@ -155,24 +152,25 @@ contract GaugeControllerLzAdapter is OApp, OAppOptionsType3 {
     /// @notice Pulls rewards for a gauge across chains using LayerZero.
     /// @param _gaugeAddress The address of the gauge to pull rewards from.
     /// @param _epoch The epoch for which to pull rewards.
+    /// @param _fee The calculated fee for the send() operation.
+    ///      - nativeFee: The native fee.
+    ///      - lzTokenFee: The lzToken fee.
     /// @param _options LayerZero message options for customizing message delivery.
     /// @return msgReceipt The receipt for the LayerZero message.
-    function pull(address _gaugeAddress, uint256 _epoch, bytes calldata _options)
+    function pull(address _gaugeAddress, uint256 _epoch, MessagingFee calldata _fee, bytes calldata _options)
         external
         payable
         returns (MessagingReceipt memory msgReceipt)
     {
-        bytes32 gaugeId = keccak256(abi.encode(block.chainid, _gaugeAddress));
+        PullParams memory pullParams = _buildPullParams(_gaugeAddress, _epoch);
 
-        PullParams memory pullParams = PullParams({epoch: _epoch, gaugeId: gaugeId, gaugeAddress: _gaugeAddress});
-
-        bytes memory payload = abi.encode(bytes(""), pullParams);
+        bytes memory payload = abi.encode(PULL_TYPE, abi.encode(pullParams));
 
         _lzSend(
             dstEid, // Destination chain's endpoint ID.
             payload, // Encoded message payload being sent.
             combineOptions(dstEid, PULL_TYPE, _options), // Message execution options (e.g., gas to use on destination).
-            MessagingFee(msg.value, 0),
+            _fee,
             payable(msg.sender) // The refund address in case the send call reverts.
         );
 
@@ -183,12 +181,12 @@ contract GaugeControllerLzAdapter is OApp, OAppOptionsType3 {
         internal
         override
     {
-        (bytes memory voteParams, bytes memory pullParams) = abi.decode(_message, (bytes, bytes));
+        (uint16 MSG_TYPE, bytes memory params) = abi.decode(_message, (uint16, bytes));
 
-        if (voteParams.length > 0) {
-            gaugeController.vote(abi.decode(voteParams, (VoteParams)));
-        } else if (pullParams.length > 0) {
-            PullParams memory pullParamsDecoded = abi.decode(pullParams, (PullParams));
+        if (MSG_TYPE == VOTE_TYPE) {
+            gaugeController.vote(abi.decode(params, (VoteParams)));
+        } else if (MSG_TYPE == PULL_TYPE) {
+            PullParams memory pullParamsDecoded = abi.decode(params, (PullParams));
 
             uint256 reward = gaugeController.pull(pullParamsDecoded);
 
@@ -209,6 +207,35 @@ contract GaugeControllerLzAdapter is OApp, OAppOptionsType3 {
         }
 
         emit MessageReceived(_message, _guid, _origin.srcEid);
+    }
+
+    function _buildVoteParams(uint256 _power, bytes32 _gaugeId) private view returns (VoteParams memory voteParams) {
+        // Check xSYK balance of the user
+        uint256 totalPower = xSyk.balanceOf(msg.sender);
+        // Check the xSYK staked balance of the user on staking adapter
+        totalPower += xSykStakingLzAdapter.balanceOf(msg.sender);
+
+        if (totalPower < _power) {
+            revert GaugeControllerLzAdapter_NotEnoughPowerAvailable();
+        }
+
+        voteParams = VoteParams({
+            power: _power,
+            totalPower: totalPower,
+            epoch: epoch(),
+            accountId: keccak256(abi.encode(block.chainid, msg.sender)),
+            gaugeId: _gaugeId
+        });
+    }
+
+    function _buildPullParams(address _gaugeAddress, uint256 _epoch)
+        private
+        view
+        returns (PullParams memory pullParams)
+    {
+        bytes32 gaugeId = keccak256(abi.encode(block.chainid, _gaugeAddress));
+
+        pullParams = PullParams({epoch: _epoch, gaugeId: gaugeId, gaugeAddress: _gaugeAddress});
     }
 
     function recoverNative() external onlyOwner {

@@ -57,7 +57,7 @@ interface IXSykStakingLzAdapter {
     /// @notice Returns the staked balance of the account.
     /// @param _account Address of the account.
     /// @return balance Balance of the account.
-    function balanceOf(address _account) external returns (uint256 balance);
+    function balanceOf(address _account) external view returns (uint256 balance);
 
     /// @notice Allows users to stake xSYK tokens and triggers a cross-chain message to the destination chain.
     /// @param _amount The amount of xSYK tokens to stake.
