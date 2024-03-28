@@ -15,13 +15,13 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 contract GaugeController is IGaugeController, AccessManaged {
     using SafeERC20 for IStrykeTokenRoot;
 
-    /// @notice The total reward distributed per epoch across all gauges.
+    /// @notice The current total reward distributed across all gauges.
     uint256 public totalRewardPerEpoch;
 
-    /// @notice The portion of the total reward per epoch that is allocated based on voting.
+    /// @notice The current portion of the total reward that is allocated based on voting.
     uint256 public totalVoteableRewardPerEpoch;
 
-    /// @notice The sum of base rewards for all gauges per epoch.
+    /// @notice The current sum of base rewards for all gauges.
     uint256 public totalBaseRewardPerEpoch;
 
     /// @notice The total reward distributed per epoch across all gauges.
@@ -33,6 +33,7 @@ contract GaugeController is IGaugeController, AccessManaged {
     /// @notice The sum of base rewards for all gauges per epoch.
     mapping(uint256 => uint256) public totalBaseReward;
 
+    /// @notice Epoch no => whether finalized or not.
     mapping(uint256 => bool) public epochFinalized;
 
     /// @notice Length of an epoch in seconds.
@@ -147,6 +148,9 @@ contract GaugeController is IGaugeController, AccessManaged {
         gauges[_gaugeId] = GaugeInfo({gaugeType: 0, chainId: 0, baseReward: 0, gaugeAddress: address(0)});
     }
 
+    /// @notice Finalizes an epoch.
+    /// @dev Restricted to contract administrators.
+    /// @param _epoch Epoch number.
     function finalizeEpoch(uint256 _epoch) external restricted {
         if (_epoch == 0) {
             totalBaseReward[_epoch] = totalBaseRewardPerEpoch;

@@ -436,9 +436,13 @@ contract IntegrationTest is Test {
 
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
 
-        _fee = gaugeControllerLzAdapterBsc.quotePull(address(gaugeB), 0, options, false);
+        _fee = gaugeControllerLzAdapterBsc.quotePull(
+            address(gaugeB), 0, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options, false
+        );
 
-        gaugeControllerLzAdapterBsc.pull{value: _fee.nativeFee}(address(gaugeB), 0, _fee, options);
+        gaugeControllerLzAdapterBsc.pull{value: _fee.nativeFee}(
+            address(gaugeB), 0, _fee, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options
+        );
 
         gaugeB.pull();
 
@@ -477,8 +481,9 @@ contract IntegrationTest is Test {
         xSykBsc.convert(1 ether, doe.addr);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykBsc.approve(address(xSykStakingLzAdapterBsc), 1 ether);
-        MessagingFee memory _fee =
-            xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 30110, 1 ether, options, false);
+        MessagingFee memory _fee = xSykStakingLzAdapterBsc.quote(
+            xSykStakingLzAdapterBsc.STAKE_TYPE(), 30110, 1 ether, bytes(""), options, false
+        );
         xSykStakingLzAdapterBsc.stake{value: _fee.nativeFee}(1 ether, _fee, options);
         bytes32 doeId = keccak256(abi.encode(56, doe.addr));
         assertEq(xSykStaking.balanceOf(doeId), 1 ether);
@@ -504,11 +509,25 @@ contract IntegrationTest is Test {
         vm.startPrank(doe.addr, doe.addr);
         vm.chainId(56);
         _fee = xSykStakingLzAdapterRoot.quote(
-            xSykStakingLzAdapterRoot.FINALIZE_UNSTAKE_TYPE(), 30102, 1 ether, options, false
+            xSykStakingLzAdapterRoot.FINALIZE_UNSTAKE_TYPE(),
+            30102,
+            1 ether,
+            bytes(""),
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0),
+            false
         );
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, uint128(_fee.nativeFee));
-        _fee = xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.UNSTAKE_TYPE(), 30110, 1 ether, options, false);
-        xSykStakingLzAdapterBsc.unstake{value: _fee.nativeFee}(1 ether, _fee, options);
+        _fee = xSykStakingLzAdapterBsc.quote(
+            xSykStakingLzAdapterBsc.UNSTAKE_TYPE(),
+            30110,
+            1 ether,
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0),
+            options,
+            false
+        );
+        xSykStakingLzAdapterBsc.unstake{value: _fee.nativeFee}(
+            1 ether, _fee, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options
+        );
         assertEq(xSykBsc.balanceOf(doe.addr), 1 ether);
         assertEq(xSykStaking.balanceOf(keccak256(abi.encode(56, doe.addr))), 0);
 
@@ -519,8 +538,17 @@ contract IntegrationTest is Test {
 
         MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
-        _fee = xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.CLAIM_TYPE(), 30110, 0, options, false);
-        xSykStakingLzAdapterBsc.claim{value: _fee.nativeFee}(_fee, options);
+        _fee = xSykStakingLzAdapterBsc.quote(
+            xSykStakingLzAdapterBsc.CLAIM_TYPE(),
+            30110,
+            0,
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0),
+            options,
+            false
+        );
+        xSykStakingLzAdapterBsc.claim{value: _fee.nativeFee}(
+            _fee, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options
+        );
         assertEq(sykBsc.balanceOf(doe.addr), 174999999999999938400);
         assertEq(xSykBsc.balanceOf(doe.addr), 175999999999999938400);
 
@@ -625,8 +653,9 @@ contract IntegrationTest is Test {
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykBsc.approve(address(xSykStakingLzAdapterBsc), 2 ether);
-        MessagingFee memory _fee =
-            xSykStakingLzAdapterBsc.quote(xSykStakingLzAdapterBsc.STAKE_TYPE(), 30110, 2 ether, options, false);
+        MessagingFee memory _fee = xSykStakingLzAdapterBsc.quote(
+            xSykStakingLzAdapterBsc.STAKE_TYPE(), 30110, 2 ether, bytes(""), options, false
+        );
         xSykStakingLzAdapterBsc.stake{value: _fee.nativeFee}(2 ether, _fee, options);
 
         _fee = gaugeControllerLzAdapterBsc.quoteVote(2 ether, gaugeBId, options, false);
@@ -650,8 +679,12 @@ contract IntegrationTest is Test {
         MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
 
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
-        _fee = gaugeControllerLzAdapterBsc.quotePull(address(gaugeB), 0, options, false);
-        gaugeControllerLzAdapterBsc.pull{value: _fee.nativeFee}(address(gaugeB), 0, _fee, options);
+        _fee = gaugeControllerLzAdapterBsc.quotePull(
+            address(gaugeB), 0, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options, false
+        );
+        gaugeControllerLzAdapterBsc.pull{value: _fee.nativeFee}(
+            address(gaugeB), 0, _fee, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options
+        );
 
         gaugeB.pull();
 

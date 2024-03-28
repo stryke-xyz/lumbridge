@@ -161,8 +161,8 @@ contract XSykStaking is IXSykStaking, AccessManaged {
 
         emit Unstaked(_account, _amount, chainId);
     }
-    /// @inheritdoc	IXSykStaking
 
+    /// @inheritdoc	IXSykStaking
     function earned(bytes32 _accountId) public view returns (uint256) {
         return ((balanceOf[_accountId] * (rewardPerToken() - userRewardPerTokenPaid[_accountId])) / 1e18)
             + rewards[_accountId];
@@ -251,6 +251,9 @@ contract XSykStaking is IXSykStaking, AccessManaged {
         emit Notified(_amount, finishAt);
     }
 
+    /// @dev Returns the minimum of 2 values. Private function.
+    /// @param x uint256
+    /// @param y uint256
     function _min(uint256 x, uint256 y) private pure returns (uint256) {
         return x <= y ? x : y;
     }

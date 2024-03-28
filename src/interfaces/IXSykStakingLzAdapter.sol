@@ -41,8 +41,7 @@ interface IXSykStakingLzAdapter {
     /// @param amount Amount to stake or unstake, 0 for claim and exit.
     /// @param account Address of the account.
     /// @param guid Identifier for the LayerZero message.
-    /// @param srcEid Source Endpoint ID.
-    event MessageReceived(uint16 messageType, uint256 amount, address account, bytes32 guid, uint32 srcEid);
+    event MessageReceived(uint16 messageType, uint256 amount, address account, bytes32 guid);
 
     /*==== ERRORS ====*/
 
@@ -76,20 +75,24 @@ interface IXSykStakingLzAdapter {
     /// @param _fee The calculated fee for the send() operation.
     ///      - nativeFee: The native fee.
     ///      - lzTokenFee: The lzToken fee.
+    /// @param _finalizeUnstakeOptions LayerZero message options for finalizing the unstake.
     /// @param _options LayerZero message options for cross-chain communication.
     /// @return msgReceipt The receipt of the LayerZero message.
-    function unstake(uint256 _amount, MessagingFee calldata _fee, bytes calldata _options)
-        external
-        payable
-        returns (MessagingReceipt memory msgReceipt);
+    function unstake(
+        uint256 _amount,
+        MessagingFee calldata _fee,
+        bytes calldata _finalizeUnstakeOptions,
+        bytes calldata _options
+    ) external payable returns (MessagingReceipt memory msgReceipt);
 
     /// @notice Allows users to claim their rewards, triggering a cross-chain message to handle the reward distribution.
     /// @param _fee The calculated fee for the send() operation.
     ///      - nativeFee: The native fee.
     ///      - lzTokenFee: The lzToken fee.
+    /// @param _sendSykOptions LayerZero message options for sending the SYK back to the src chain for the user.
     /// @param _options LayerZero message options for cross-chain communication.
     /// @return msgReceipt The receipt of the LayerZero message.
-    function claim(MessagingFee calldata _fee, bytes calldata _options)
+    function claim(MessagingFee calldata _fee, bytes calldata _sendSykOptions, bytes calldata _options)
         external
         payable
         returns (MessagingReceipt memory msgReceipt);
