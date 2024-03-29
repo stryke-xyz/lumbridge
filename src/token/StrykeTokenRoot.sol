@@ -14,9 +14,6 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @dev Contains logic for inflation management
 contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
     /// @inheritdoc	IStrykeTokenRoot
-    uint256 public genesis;
-
-    /// @inheritdoc	IStrykeTokenRoot
     uint256 public inflationPerYear;
 
     /// @inheritdoc	IStrykeTokenRoot
@@ -27,6 +24,9 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
 
     /// @dev The amount of tokens minted using the mint() fn which is not inflation controlled
     uint256 public totalMinted;
+
+    /// @dev Last time stryke was called to inflate the supply
+    uint256 public lastStrykeTimestamp;
 
     /// @notice A constant representing 1 year in seconds
     uint256 public constant ONE_YEAR = 365 days;
@@ -45,12 +45,12 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
         __ERC20Permit_init("StrykeToken");
         __UUPSUpgradeable_init();
         maxSupply = 100_000_000 ether; // 100 million tokens
-        genesis = block.timestamp;
+        lastStrykeTimestamp = block.timestamp;
     }
 
     /// @inheritdoc	IStrykeTokenRoot
     function availableSupply() public view returns (uint256) {
-        return Math.min(totalMinted + ((block.timestamp - genesis)) * emissionRatePerSecond, maxSupply);
+        return Math.min(totalMinted + ((block.timestamp - lastStrykeTimestamp)) * emissionRatePerSecond, maxSupply);
     }
 
     /// @inheritdoc	IStrykeTokenRoot
@@ -58,6 +58,9 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
         if (totalMinted + _amount > availableSupply()) {
             revert StrykeTokenRoot_InflationExceeding();
         }
+
+        totalMinted += _amount;
+        lastStrykeTimestamp = block.timestamp;
 
         _mint(msg.sender, _amount);
     }
