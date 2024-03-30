@@ -67,6 +67,7 @@ contract IntegrationTest is Test {
         StrykeTokenRoot sykImplementation = new StrykeTokenRoot();
         StrykeTokenChild sykChildImplementation = new StrykeTokenChild();
         XStrykeToken xSykImplementation = new XStrykeToken();
+        GaugeController gaugeControllerImplementation = new GaugeController();
 
         accessManagerRoot = new AccessManager(address(this));
         accessManagerBsc = new AccessManager(address(this));
@@ -124,8 +125,20 @@ contract IntegrationTest is Test {
         // Move 7 days ahead in time to allow 1 week of inflation to process
         skip(7 days);
 
-        gaugeController =
-            new GaugeController(address(sykRoot), address(xSykRoot), address(xSykStaking), address(accessManagerRoot));
+        gaugeController = GaugeController(
+            address(
+                new ERC1967Proxy(
+                    address(gaugeControllerImplementation),
+                    abi.encodeWithSelector(
+                        GaugeController.initialize.selector,
+                        address(sykRoot),
+                        address(xSykRoot),
+                        address(xSykStaking),
+                        address(accessManagerRoot)
+                    )
+                )
+            )
+        );
 
         gaugeController.setGenesis(block.timestamp);
 
