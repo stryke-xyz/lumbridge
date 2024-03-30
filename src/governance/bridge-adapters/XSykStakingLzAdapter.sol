@@ -113,12 +113,6 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         payable
         returns (MessagingReceipt memory msgReceipt)
     {
-        uint256 balance = xSyk.balanceOf(msg.sender);
-
-        if (balance < _amount) {
-            revert XSykStakingLzAdapter_InsufficientBalance();
-        }
-
         xSyk.safeTransferFrom(msg.sender, address(this), _amount);
 
         balanceOf[msg.sender] += _amount;
@@ -143,12 +137,6 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         bytes calldata _finalizeUnstakeOptions,
         bytes calldata _options
     ) external payable returns (MessagingReceipt memory msgReceipt) {
-        uint256 balance = balanceOf[msg.sender];
-
-        if (balance < _amount) {
-            revert XSykStakingLzAdapter_InsufficientBalance();
-        }
-
         bytes memory payload = abi.encode(UNSTAKE_TYPE, _amount, block.chainid, msg.sender, _finalizeUnstakeOptions);
 
         msgReceipt = _lzSend(
@@ -209,15 +197,9 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     }
 
     function _finalizeUnstake(address _account, uint256 _amount) private {
-        uint256 balance = balanceOf[_account];
-
-        if (balance < _amount) {
-            revert XSykStakingLzAdapter_InsufficientBalance();
-        }
+        balanceOf[_account] -= _amount;
 
         xSyk.safeTransfer(_account, _amount);
-
-        balanceOf[_account] -= _amount;
     }
 
     function _sendSyk(uint32 _dstEid, uint256 _amount, uint256 _xSykAmount, address _to, bytes memory _options)

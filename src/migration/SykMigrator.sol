@@ -28,10 +28,10 @@ contract SykMigrator is AccessManaged {
     uint256 public migrationPeriodEnd;
 
     /// @notice Conversion rate for DPX to SYK migration, in 1e4 precision.
-    uint256 public dpxConversionRate = 100 * 1e4;
+    uint256 public constant dpxConversionRate = 100 * 1e4;
 
     /// @notice Conversion rate for rDPX to SYK migration, in 1e4 precision.
-    uint256 public rdpxConversionRate = 133333;
+    uint256 public constant rdpxConversionRate = 133333;
 
     /// @dev Indicates an operation with an invalid token address.
     error SykMigrator_InvalidToken();

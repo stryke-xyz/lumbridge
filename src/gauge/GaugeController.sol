@@ -42,14 +42,14 @@ contract GaugeController is IGaugeController, AccessManaged {
     /// @notice The timestamp of the first epoch's start.
     uint256 public genesis;
 
+    /// @notice Address of the xSYK Staking contract.
+    address public xSykStaking;
+
     /// @notice Address of the xSyk token.
     address public xSyk;
 
     /// @notice Address of the Syk token.
     address public syk;
-
-    /// @notice Address of the xSYK Staking contract.
-    address public xSykStaking;
 
     /// @notice Tracks the voting power allocated to each gauge per epoch.
     mapping(uint256 => mapping(bytes32 => uint256)) public gaugePowersPerEpoch;
@@ -88,6 +88,13 @@ contract GaugeController is IGaugeController, AccessManaged {
         require(genesis == 0, "genesis cannot be reset");
 
         genesis = _genesis;
+    }
+
+    /// @notice Updates the xSYK staking contract address.
+    /// @dev Restricted to contract administrators.
+    /// @param _xSykStaking Address of the new xSYK staking contract.
+    function updateXSykStaking(address _xSykStaking) external restricted {
+        xSykStaking = _xSykStaking;
     }
 
     /// @notice Updates the total reward distributed per epoch.
@@ -189,7 +196,9 @@ contract GaugeController is IGaugeController, AccessManaged {
             }
         }
 
-        if (_voteParams.epoch != epoch()) {
+        uint256 _epoch = epoch();
+
+        if (_voteParams.epoch != _epoch) {
             revert GaugeController_IncorrectEpoch();
         }
 
@@ -209,17 +218,17 @@ contract GaugeController is IGaugeController, AccessManaged {
             totalPower += IXSykStaking(xSykStaking).balanceOf(accountId);
         }
 
-        uint256 usedPower = accountPowerUsedPerEpoch[epoch()][accountId];
+        uint256 usedPower = accountPowerUsedPerEpoch[_epoch][accountId];
 
         if ((totalPower - usedPower) < _voteParams.power) {
             revert GaugeController_NotEnoughPowerAvailable();
         }
 
-        accountPowerUsedPerEpoch[epoch()][accountId] += _voteParams.power;
+        accountPowerUsedPerEpoch[_epoch][accountId] = usedPower + _voteParams.power;
 
-        gaugePowersPerEpoch[epoch()][_voteParams.gaugeId] += _voteParams.power;
+        gaugePowersPerEpoch[_epoch][_voteParams.gaugeId] += _voteParams.power;
 
-        totalPowerUsedPerEpoch[epoch()] += _voteParams.power;
+        totalPowerUsedPerEpoch[_epoch] += _voteParams.power;
 
         emit Voted(_voteParams);
     }

@@ -3,9 +3,9 @@ pragma solidity =0.8.23;
 
 /// @dev Struct to hold information about each gauge.
 struct GaugeInfo {
-    uint8 gaugeType;
     uint256 chainId;
     uint256 baseReward;
+    uint8 gaugeType;
     address gaugeAddress;
 }
 

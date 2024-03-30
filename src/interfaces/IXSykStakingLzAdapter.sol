@@ -43,14 +43,6 @@ interface IXSykStakingLzAdapter {
     /// @param guid Identifier for the LayerZero message.
     event MessageReceived(uint16 messageType, uint256 amount, address account, bytes32 guid);
 
-    /*==== ERRORS ====*/
-
-    /// @dev Indicates an operation was attempted with an insufficient token balance.
-    error XSykStakingLzAdapter_InsufficientBalance();
-
-    /// @dev Indicates an attempt to perform an operation without a corresponding staked amount.
-    error XSykStakingLzAdapter_NoStakedAmountFound();
-
     /*==== PUBLIC FUNCTIONS ====*/
 
     /// @notice Returns the staked balance of the account.

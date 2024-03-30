@@ -104,8 +104,10 @@ contract SykLzAdapter is ISykLzAdapter, OApp, OAppOptionsType3 {
 
         uint256 sykAmount = amount - xSykAmount;
 
-        // Mints the SYK amount to the 'to' address
-        _credit(to, sykAmount);
+        if (sykAmount > 0) {
+            // Mints the SYK amount to the 'to' address
+            _credit(to, sykAmount);
+        }
 
         if (xSykAmount > 0) {
             _credit(address(this), xSykAmount);

@@ -123,18 +123,20 @@ contract XStrykeToken is
     /// @param _duration the duration of the vesting
     /// @return sykAmount
     function getSykByVestingDuration(uint256 _xSykAmount, uint256 _duration) public view returns (uint256) {
-        if (_duration < redeemSettings.minDuration) {
+        RedeemSettings memory _redeemSettings = redeemSettings;
+
+        if (_duration < _redeemSettings.minDuration) {
             return 0;
         }
 
-        if (_duration > redeemSettings.maxDuration) {
-            return (_xSykAmount * redeemSettings.maxRatio) / 100;
+        if (_duration >= _redeemSettings.maxDuration) {
+            return (_xSykAmount * _redeemSettings.maxRatio) / 100;
         }
 
-        uint256 ratio = redeemSettings.minRatio
+        uint256 ratio = _redeemSettings.minRatio
             + (
-                ((_duration - redeemSettings.minDuration) * (redeemSettings.maxRatio - redeemSettings.minRatio))
-                    / (redeemSettings.maxDuration - redeemSettings.minDuration)
+                ((_duration - _redeemSettings.minDuration) * (_redeemSettings.maxRatio - _redeemSettings.minRatio))
+                    / (_redeemSettings.maxDuration - _redeemSettings.minDuration)
             );
 
         return (_xSykAmount * ratio) / 100;
@@ -153,24 +155,26 @@ contract XStrykeToken is
         if (_amount <= 0) revert XStrykeToken_AmountZero();
         if (_duration < redeemSettings.minDuration) revert XStrykeToken_DurationTooLow();
 
+        uint256 _vestIndex = vestIndex;
+
         _transfer(msg.sender, address(this), _amount);
 
         // get corresponding SYK amount
         uint256 sykAmount = getSykByVestingDuration(_amount, _duration);
 
-        emit Vested(msg.sender, _amount, sykAmount, _duration, vestIndex);
+        emit Vested(msg.sender, _amount, sykAmount, _duration, _vestIndex);
 
         // if redeeming is not immediate, go through vesting process
         if (_duration > 0) {
             // add vesting entry
-            vests[vestIndex] = VestData({
+            vests[_vestIndex] = VestData({
                 account: msg.sender,
                 sykAmount: sykAmount,
                 xSykAmount: _amount,
                 maturity: block.timestamp + _duration,
                 status: VestStatus.ACTIVE
             });
-            vestIndex += 1;
+            vestIndex = _vestIndex + 1;
         } else {
             // immediately redeem for SYK
             _redeem(msg.sender, _amount, sykAmount);
