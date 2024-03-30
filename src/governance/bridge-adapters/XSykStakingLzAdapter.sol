@@ -137,6 +137,12 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
         bytes calldata _finalizeUnstakeOptions,
         bytes calldata _options
     ) external payable returns (MessagingReceipt memory msgReceipt) {
+        uint256 balance = balanceOf[msg.sender];
+
+        if (balance < _amount) {
+            revert XSykStakingLzAdapter_InsufficientBalance();
+        }
+
         bytes memory payload = abi.encode(UNSTAKE_TYPE, _amount, block.chainid, msg.sender, _finalizeUnstakeOptions);
 
         msgReceipt = _lzSend(
