@@ -22,11 +22,14 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
     /// @inheritdoc	IStrykeTokenRoot
     uint256 public maxSupply;
 
-    /// @dev The amount of tokens minted using the mint() fn which is not inflation controlled
+    /// @dev The amount of tokens minted using the stryke() fn
+    uint256 public totalStryked;
+
+    /// @dev The amount of tokens minted using adminMint() fn
     uint256 public totalMinted;
 
-    /// @dev Last time stryke was called to inflate the supply
-    uint256 public lastStrykeTimestamp;
+    /// @dev Last time inflation was updated
+    uint256 public lastInflationUpdated;
 
     /// @notice A constant representing 1 year in seconds
     uint256 public constant ONE_YEAR = 365 days;
@@ -45,22 +48,19 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
         __ERC20Permit_init("StrykeToken");
         __UUPSUpgradeable_init();
         maxSupply = 100_000_000 ether; // 100 million tokens
-        lastStrykeTimestamp = block.timestamp;
-    }
-
-    /// @inheritdoc	IStrykeTokenRoot
-    function availableSupply() public view returns (uint256) {
-        return Math.min(totalMinted + ((block.timestamp - lastStrykeTimestamp)) * emissionRatePerSecond, maxSupply);
     }
 
     /// @inheritdoc	IStrykeTokenRoot
     function stryke(uint256 _amount) external restricted {
-        if (totalMinted + _amount > availableSupply()) {
+        if (totalStryked + _amount > ((block.timestamp - lastInflationUpdated)) * emissionRatePerSecond) {
             revert StrykeTokenRoot_InflationExceeding();
         }
 
-        totalMinted += _amount;
-        lastStrykeTimestamp = block.timestamp;
+        if (totalStryked + totalMinted + _amount > maxSupply) {
+            revert StrykeTokenRoot_MaxSupplyReached();
+        }
+
+        totalStryked += _amount;
 
         _mint(msg.sender, _amount);
     }
@@ -69,12 +69,17 @@ contract StrykeTokenRoot is StrykeTokenBase, IStrykeTokenRoot {
     function setInflationPerYear(uint256 _inflationPerYear) external restricted {
         inflationPerYear = _inflationPerYear;
         emissionRatePerSecond = _inflationPerYear / ONE_YEAR;
+        lastInflationUpdated = block.timestamp;
 
         emit InflationPerYearSet(_inflationPerYear, emissionRatePerSecond);
     }
 
     /// @inheritdoc	IStrykeTokenRoot
     function adminMint(address _to, uint256 _amount) external restricted {
+        if (totalStryked + totalMinted + _amount > maxSupply) {
+            revert StrykeTokenRoot_MaxSupplyReached();
+        }
+
         totalMinted += _amount;
 
         super.mint(_to, _amount);

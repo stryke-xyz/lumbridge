@@ -12,8 +12,8 @@ interface IStrykeTokenRoot is IStrykeTokenBase {
     /// @notice Reverts with this error if more tokens are trying to be emitted than the allowed emissions
     error StrykeTokenRoot_InflationExceeding();
 
-    /// @notice Returns the timestamp of the deployment of this contract
-    function genesis() external view returns (uint256);
+    /// @notice Reverts with this error if more tokens are trying to be emitted than the max supply
+    error StrykeTokenRoot_MaxSupplyReached();
 
     /// @notice Returns the amount of tokens that can be emitted per year
     function inflationPerYear() external view returns (uint256);
@@ -23,8 +23,6 @@ interface IStrykeTokenRoot is IStrykeTokenBase {
 
     /// @notice Returns the max supply of the token
     function maxSupply() external view returns (uint256);
-
-    function availableSupply() external view returns (uint256);
 
     /// @notice Function for token emission
     /// @dev Ensures no more tokens than the allowed inflation can be minted. Can only be called by authorized addresses.

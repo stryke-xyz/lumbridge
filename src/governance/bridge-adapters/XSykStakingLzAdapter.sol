@@ -233,17 +233,17 @@ contract XSykStakingLzAdapter is IXSykStakingLzAdapter, OApp, OAppOptionsType3 {
     }
 
     function _sendFinalizeUnstake(
-        uint32 dstEid,
+        uint32 _dstEid,
         uint256 _amount,
         uint256 _chainId,
         address _account,
         bytes memory _options
     ) private {
         _lzSend(
-            dstEid, // Destination chain's endpoint ID.
+            _dstEid, // Destination chain's endpoint ID.
             abi.encode(FINALIZE_UNSTAKE_TYPE, _amount, _chainId, _account, bytes("")), // Encoded message payload being sent.
             _options, // Message execution options (e.g., gas to use on destination).
-            quote(FINALIZE_UNSTAKE_TYPE, dstEid, _amount, bytes(""), _options, false), // Fee struct containing native gas and ZRO token.
+            quote(FINALIZE_UNSTAKE_TYPE, _dstEid, _amount, bytes(""), _options, false), // Fee struct containing native gas and ZRO token.
             address(this) // The refund address in case the send call reverts.
         );
     }

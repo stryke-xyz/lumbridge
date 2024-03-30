@@ -48,7 +48,7 @@ contract StykeTokenTest is Test {
         assertEq(syk.emissionRatePerSecond(), emissionRatePerSecond, "Emission rate per second incorrectly set");
     }
 
-    function test_availableSupplyAndStryke() public {
+    function test_stryke() public {
         syk.setInflationPerYear(inflationPerYear);
 
         // Skip 7 days in time to check if correct amount of tokens are being emitted for 7 days
@@ -58,18 +58,11 @@ contract StykeTokenTest is Test {
 
         uint256 totalEmissionsFor7Days = emissionRatePerSecond * 7 days;
 
-        assertEq(syk.availableSupply(), totalEmissionsFor7Days, "Incorrect emissions for 7 days");
-
         vm.expectRevert();
         syk.stryke(totalEmissionsFor7Days + 1);
 
         syk.stryke(totalEmissionsFor7Days);
         assertEq(syk.balanceOf(address(this)), totalEmissionsFor7Days, "Incorrect balanceOf");
-
-        // Skip enough time to let the max supply be emitted (Approx. 33 years or 12167 days)
-        skip(12168 days);
-
-        assertEq(syk.availableSupply(), syk.maxSupply(), "Incorrect availableSupply");
     }
 
     function testFail_stryke() public {
