@@ -15,19 +15,22 @@ interface IXSykStaking {
     /// @notice This event is fired whenever a user stakes tokens, indicating the amount staked.
     /// @param account The address of the account that staked tokens.
     /// @param amount The amount of tokens that were staked by the account.
-    event Staked(address indexed account, uint256 amount);
+    /// @param chainId The Chain ID of source network from where the user is staking.
+    event Staked(address indexed account, uint256 amount, uint256 chainId);
 
     /// @dev Emitted when staked tokens are withdrawn (unstaked) from the contract.
     /// @notice This event is fired whenever a user unstakes tokens, indicating the amount unstaked.
     /// @param account The address of the account that unstaked tokens.
-    /// @param amount The amount of tokens that were unstaked by the account.
-    event Unstaked(address indexed account, uint256 amount);
+    /// @param amount The amount of tokens that were unstaked by the account.\
+    /// @param chainId The Chain ID of source network from where the user is unstaking.
+    event Unstaked(address indexed account, uint256 amount, uint256 chainId);
 
     /// @dev Emitted when rewards are claimed by a staker.
     /// @notice This event is fired whenever a user claims their staking rewards, indicating the amount claimed.
     /// @param account The address of the account that claimed rewards.
     /// @param amount The amount of rewards that were claimed by the account.
-    event Claimed(address indexed account, uint256 amount);
+    /// @param chainId The Chain ID of source network from where the user is claiming.
+    event Claimed(address indexed account, uint256 amount, uint256 chainId);
 
     /// @dev Emitted when a new reward amount is notified to the contract.
     /// @notice This event signals the notification of a new reward amount and the time when the rewards distribution will finish.
@@ -60,33 +63,39 @@ interface IXSykStaking {
     /// @notice Indicates that the operation cannot proceed because the contract does not hold enough rewards to fulfill the request.
     error XSykStaking_NotEnoughRewardBalance();
 
-    /// @notice Returns the saked balance of an account
-    /// @param _account address of the account
-    function balanceOf(address _account) external returns (uint256);
+    /// @notice Returns the saked balance of an account.
+    /// @param _accountId ID of the account.
+    function balanceOf(bytes32 _accountId) external returns (uint256);
+
+    /// @notice Returns the xSYK Reward Percentage.
+    function xSykRewardPercentage() external returns (uint256);
 
     /// @notice Allows a user or a bridge adapter to stake tokens on behalf of a user.
     /// @param _amount Amount of tokens to stake.
+    /// @param _chainId Chain ID from where the user is staking.
     /// @param _account Address of the user on whose behalf tokens are staked.
-    function stake(uint256 _amount, address _account) external;
+    function stake(uint256 _amount, uint256 _chainId, address _account) external;
 
     /// @notice Unstakes staked tokens for a user.
     /// @param _amount Amount of tokens to withdraw.
+    /// @param _chainId Chain ID from where the user is unstaking.
     /// @param _account Address of the user withdrawing tokens.
-    function unstake(uint256 _amount, address _account) external;
+    function unstake(uint256 _amount, uint256 _chainId, address _account) external;
 
     /// @notice Calculates the total rewards earned by a user.
-    /// @param _account Address of the user.
+    /// @param _accountId ID of the user (keccak256(abi.encode(chainId, userAddress))).
     /// @return The total rewards earned.
-    function earned(address _account) external view returns (uint256);
+    function earned(bytes32 _accountId) external view returns (uint256);
 
     /// @notice Claims earned rewards for a user.
     /// @param _account Address of the user claiming rewards.
+    /// @param _chainId Chain ID from where the user is claiming.
     /// @return reward The amount of rewards claimed.
-    function claim(address _account) external returns (uint256 reward);
+    function claim(uint256 _chainId, address _account) external returns (uint256 reward);
 
     /// @notice Withdraws staked tokens and claims rewards for a user.
     /// @param _account Address of the user exiting the staking contract.
     /// @return balance The staked token balance returned.
     /// @return reward The rewards claimed.
-    function exit(address _account) external returns (uint256 balance, uint256 reward);
+    function exit(uint256 _chainId, address _account) external returns (uint256 balance, uint256 reward);
 }

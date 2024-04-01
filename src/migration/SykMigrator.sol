@@ -4,7 +4,7 @@ pragma solidity =0.8.23;
 import {AccessManaged} from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IStrykeTokenBase} from "../interfaces/IStrykeTokenBase.sol";
+import {IStrykeTokenRoot} from "../interfaces/IStrykeTokenRoot.sol";
 
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -28,10 +28,10 @@ contract SykMigrator is AccessManaged {
     uint256 public migrationPeriodEnd;
 
     /// @notice Conversion rate for DPX to SYK migration, in 1e4 precision.
-    uint256 public dpxConversionRate = 100 * 1e4;
+    uint256 public constant dpxConversionRate = 100 * 1e4;
 
     /// @notice Conversion rate for rDPX to SYK migration, in 1e4 precision.
-    uint256 public rdpxConversionRate = 133333;
+    uint256 public constant rdpxConversionRate = 133333;
 
     /// @dev Indicates an operation with an invalid token address.
     error SykMigrator_InvalidToken();
@@ -93,7 +93,7 @@ contract SykMigrator is AccessManaged {
         }
 
         token.safeTransferFrom(msg.sender, address(this), _amount);
-        IStrykeTokenBase(syk).mint(msg.sender, (conversionRate * _amount) / 1e4);
+        IStrykeTokenRoot(syk).adminMint(msg.sender, (conversionRate * _amount) / 1e4);
 
         emit Migrated(msg.sender, _token, _amount);
     }

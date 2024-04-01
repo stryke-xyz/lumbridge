@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity =0.8.23;
 
-import {AccessManaged} from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
+import {AccessManagedUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import {IStrykeTokenRoot} from "../interfaces/IStrykeTokenRoot.sol";
 import {IGaugeController, VoteParams, PullParams, GaugeInfo} from "../interfaces/IGaugeController.sol";
@@ -12,17 +14,29 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 /// @title Gauge Controller for Reward Distribution
 /// @notice Manages gauges for different chains, handles voting power allocation, and rewards distribution.
 /// @dev This contract allows bridge adapters and users to vote on gauges and pull rewards based on their voting power.
-contract GaugeController is IGaugeController, AccessManaged {
+contract GaugeController is IGaugeController, Initializable, AccessManagedUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IStrykeTokenRoot;
 
-    /// @notice The total reward distributed per epoch across all gauges.
+    /// @notice The current total reward distributed across all gauges.
     uint256 public totalRewardPerEpoch;
 
-    /// @notice The portion of the total reward per epoch that is allocated based on voting.
+    /// @notice The current portion of the total reward that is allocated based on voting.
     uint256 public totalVoteableRewardPerEpoch;
 
-    /// @notice The sum of base rewards for all gauges per epoch.
+    /// @notice The current sum of base rewards for all gauges.
     uint256 public totalBaseRewardPerEpoch;
+
+    /// @notice The total reward distributed per epoch across all gauges.
+    mapping(uint256 => uint256) public totalReward;
+
+    /// @notice The portion of the total reward per epoch that is allocated based on voting.
+    mapping(uint256 => uint256) public totalVoteableReward;
+
+    /// @notice The sum of base rewards for all gauges per epoch.
+    mapping(uint256 => uint256) public totalBaseReward;
+
+    /// @notice Epoch no => whether finalized or not.
+    mapping(uint256 => bool) public epochFinalized;
 
     /// @notice Length of an epoch in seconds.
     uint256 public constant EPOCH_LENGTH = 7 days;
@@ -30,14 +44,14 @@ contract GaugeController is IGaugeController, AccessManaged {
     /// @notice The timestamp of the first epoch's start.
     uint256 public genesis;
 
+    /// @notice Address of the xSYK Staking contract.
+    address public xSykStaking;
+
     /// @notice Address of the xSyk token.
     address public xSyk;
 
     /// @notice Address of the Syk token.
     address public syk;
-
-    /// @notice Address of the xSYK Staking contract.
-    address public xSykStaking;
 
     /// @notice Tracks the voting power allocated to each gauge per epoch.
     mapping(uint256 => mapping(bytes32 => uint256)) public gaugePowersPerEpoch;
@@ -57,13 +71,17 @@ contract GaugeController is IGaugeController, AccessManaged {
     /// @notice Tracks which addresses are authorized as bridge adapters.
     mapping(address => bool) public bridgeAdapters;
 
-    /// @notice Initializes the contract with SYK, xSyk token addresses, and the initial authority.
-    /// @param _syk Address of the Syk token.
-    /// @param _xSyk Address of the xSyk token.
+    /// @notice Initializes the contract with SYK, xSYK, xSYK staking and the initial authority.
+    /// @param _syk Address of the SYK token.
+    /// @param _xSyk Address of the xSYK token.
+    /// @param _xSykStaking Address of the xSYK staking contract.
     /// @param _initialAuthority Address of the initial authority for access management.
-    constructor(address _syk, address _xSyk, address _xSykStaking, address _initialAuthority)
-        AccessManaged(_initialAuthority)
+    function initialize(address _syk, address _xSyk, address _xSykStaking, address _initialAuthority)
+        public
+        initializer
     {
+        __AccessManaged_init(_initialAuthority);
+        __UUPSUpgradeable_init();
         syk = _syk;
         xSyk = _xSyk;
         xSykStaking = _xSykStaking;
@@ -76,6 +94,13 @@ contract GaugeController is IGaugeController, AccessManaged {
         require(genesis == 0, "genesis cannot be reset");
 
         genesis = _genesis;
+    }
+
+    /// @notice Updates the xSYK staking contract address.
+    /// @dev Restricted to contract administrators.
+    /// @param _xSykStaking Address of the new xSYK staking contract.
+    function updateXSykStaking(address _xSykStaking) external restricted {
+        xSykStaking = _xSykStaking;
     }
 
     /// @notice Updates the total reward distributed per epoch.
@@ -123,11 +148,34 @@ contract GaugeController is IGaugeController, AccessManaged {
     function removeGauge(bytes32 _gaugeId) external restricted {
         emit GaugeRemoved(gauges[_gaugeId]);
 
+        uint256 _epoch = epoch();
+
         totalBaseRewardPerEpoch -= gauges[_gaugeId].baseReward;
 
         totalVoteableRewardPerEpoch = totalRewardPerEpoch - totalBaseRewardPerEpoch;
 
+        totalPowerUsedPerEpoch[_epoch] -= gaugePowersPerEpoch[_epoch][_gaugeId];
+
+        gaugePowersPerEpoch[_epoch][_gaugeId] = 0;
+
         gauges[_gaugeId] = GaugeInfo({gaugeType: 0, chainId: 0, baseReward: 0, gaugeAddress: address(0)});
+    }
+
+    /// @notice Finalizes an epoch.
+    /// @dev Restricted to contract administrators.
+    /// @param _epoch Epoch number.
+    function finalizeEpoch(uint256 _epoch) external restricted {
+        if (_epoch == 0) {
+            totalBaseReward[_epoch] = totalBaseRewardPerEpoch;
+            totalVoteableReward[_epoch] = totalVoteableRewardPerEpoch;
+            totalReward[_epoch] = totalRewardPerEpoch;
+        }
+
+        epochFinalized[_epoch] = true;
+
+        totalBaseReward[_epoch + 1] = totalBaseRewardPerEpoch;
+        totalVoteableReward[_epoch + 1] = totalVoteableRewardPerEpoch;
+        totalReward[_epoch + 1] = totalRewardPerEpoch;
     }
 
     /// @inheritdoc	IGaugeController
@@ -138,7 +186,9 @@ contract GaugeController is IGaugeController, AccessManaged {
     /// @inheritdoc	IGaugeController
     function computeRewards(bytes32 _id, uint256 _epoch) public view returns (uint256 reward) {
         // Compute the rewards from the voteable rewards
-        reward = totalVoteableRewardPerEpoch * gaugePowersPerEpoch[_epoch][_id] / totalPowerUsedPerEpoch[_epoch];
+        if (totalPowerUsedPerEpoch[_epoch] != 0) {
+            reward = totalVoteableReward[_epoch] * gaugePowersPerEpoch[_epoch][_id] / totalPowerUsedPerEpoch[_epoch];
+        }
 
         // Add base reward
         reward += gauges[_id].baseReward;
@@ -146,6 +196,18 @@ contract GaugeController is IGaugeController, AccessManaged {
 
     /// @inheritdoc	IGaugeController
     function vote(VoteParams calldata _voteParams) external {
+        if (_voteParams.epoch != 0) {
+            if (!epochFinalized[_voteParams.epoch - 1]) {
+                revert GaugeController_EpochNotFinalized();
+            }
+        }
+
+        uint256 _epoch = epoch();
+
+        if (_voteParams.epoch != _epoch) {
+            revert GaugeController_IncorrectEpoch();
+        }
+
         if (gauges[_voteParams.gaugeId].gaugeAddress == address(0)) {
             revert GaugeController_GaugeNotFound();
         }
@@ -158,27 +220,29 @@ contract GaugeController is IGaugeController, AccessManaged {
             accountId = _voteParams.accountId;
         } else {
             totalPower += IStrykeTokenRoot(xSyk).balanceOf(msg.sender);
-            totalPower += IXSykStaking(xSykStaking).balanceOf(msg.sender);
             accountId = keccak256(abi.encode(block.chainid, msg.sender));
+            totalPower += IXSykStaking(xSykStaking).balanceOf(accountId);
         }
 
-        uint256 usedPower = accountPowerUsedPerEpoch[epoch()][accountId];
+        uint256 usedPower = accountPowerUsedPerEpoch[_epoch][accountId];
 
         if ((totalPower - usedPower) < _voteParams.power) {
             revert GaugeController_NotEnoughPowerAvailable();
         }
 
-        accountPowerUsedPerEpoch[epoch()][accountId] += _voteParams.power;
+        accountPowerUsedPerEpoch[_epoch][accountId] = usedPower + _voteParams.power;
 
-        gaugePowersPerEpoch[epoch()][_voteParams.gaugeId] += _voteParams.power;
+        gaugePowersPerEpoch[_epoch][_voteParams.gaugeId] += _voteParams.power;
 
-        totalPowerUsedPerEpoch[epoch()] += _voteParams.power;
+        totalPowerUsedPerEpoch[_epoch] += _voteParams.power;
 
         emit Voted(_voteParams);
     }
 
     /// @inheritdoc	IGaugeController
     function pull(PullParams calldata _pullParams) external returns (uint256 reward) {
+        if (!epochFinalized[_pullParams.epoch]) revert GaugeController_EpochNotFinalized();
+
         if (_pullParams.epoch >= epoch()) {
             revert GaugeController_EpochActive();
         }
@@ -201,4 +265,6 @@ contract GaugeController is IGaugeController, AccessManaged {
 
         emit RewardPulled(_pullParams, reward);
     }
+
+    function _authorizeUpgrade(address newImplementation) internal override restricted {}
 }

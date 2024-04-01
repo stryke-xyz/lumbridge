@@ -7,12 +7,13 @@ import {ERC20PausableUpgradeable} from
 import {AccessManagedUpgradeable} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagedUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {ContractWhitelist} from "../helpers/ContractWhitelist.sol";
 
 import {IStrykeTokenBase} from "../interfaces/IStrykeTokenBase.sol";
 import {IXStrykeToken, VestData, VestStatus, RedeemSettings} from "../interfaces/IXStrykeToken.sol";
+
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title XStrykeToken
 /// @author witherblock
@@ -25,7 +26,7 @@ contract XStrykeToken is
     ERC20PausableUpgradeable,
     AccessManagedUpgradeable,
     UUPSUpgradeable,
-    ReentrancyGuard
+    ReentrancyGuardUpgradeable
 {
     using SafeERC20 for IStrykeTokenBase;
 
@@ -61,9 +62,13 @@ contract XStrykeToken is
     /// @param _syk Address of the SYK token.
     /// @param _initialAuthority Address of the AccessManaged contract.
     function initialize(address _syk, address _initialAuthority) public initializer {
+        __ERC20_init("XStrykeToken", "xSYK");
+        __ERC20Pausable_init();
+        __AccessManaged_init(_initialAuthority);
+        __UUPSUpgradeable_init();
+        __ReentrancyGuard_init();
         syk = IStrykeTokenBase(_syk);
         redeemSettings = RedeemSettings({minRatio: 50, maxRatio: 100, minDuration: 7 days, maxDuration: 180 days});
-        __AccessManaged_init(_initialAuthority);
         // Set this address to be in the whitelist
         whitelist[address(this)] = true;
         // Set the deployer as excess receiver
@@ -119,18 +124,20 @@ contract XStrykeToken is
     /// @param _duration the duration of the vesting
     /// @return sykAmount
     function getSykByVestingDuration(uint256 _xSykAmount, uint256 _duration) public view returns (uint256) {
-        if (_duration < redeemSettings.minDuration) {
+        RedeemSettings memory _redeemSettings = redeemSettings;
+
+        if (_duration < _redeemSettings.minDuration) {
             return 0;
         }
 
-        if (_duration > redeemSettings.maxDuration) {
-            return (_xSykAmount * redeemSettings.maxRatio) / 100;
+        if (_duration >= _redeemSettings.maxDuration) {
+            return (_xSykAmount * _redeemSettings.maxRatio) / 100;
         }
 
-        uint256 ratio = redeemSettings.minRatio
+        uint256 ratio = _redeemSettings.minRatio
             + (
-                ((_duration - redeemSettings.minDuration) * (redeemSettings.maxRatio - redeemSettings.minRatio))
-                    / (redeemSettings.maxDuration - redeemSettings.minDuration)
+                ((_duration - _redeemSettings.minDuration) * (_redeemSettings.maxRatio - _redeemSettings.minRatio))
+                    / (_redeemSettings.maxDuration - _redeemSettings.minDuration)
             );
 
         return (_xSykAmount * ratio) / 100;
@@ -149,24 +156,26 @@ contract XStrykeToken is
         if (_amount <= 0) revert XStrykeToken_AmountZero();
         if (_duration < redeemSettings.minDuration) revert XStrykeToken_DurationTooLow();
 
+        uint256 _vestIndex = vestIndex;
+
         _transfer(msg.sender, address(this), _amount);
 
         // get corresponding SYK amount
         uint256 sykAmount = getSykByVestingDuration(_amount, _duration);
 
-        emit Vested(msg.sender, _amount, sykAmount, _duration, vestIndex);
+        emit Vested(msg.sender, _amount, sykAmount, _duration, _vestIndex);
 
         // if redeeming is not immediate, go through vesting process
         if (_duration > 0) {
             // add vesting entry
-            vests[vestIndex] = VestData({
+            vests[_vestIndex] = VestData({
                 account: msg.sender,
                 sykAmount: sykAmount,
                 xSykAmount: _amount,
                 maturity: block.timestamp + _duration,
                 status: VestStatus.ACTIVE
             });
-            vestIndex += 1;
+            vestIndex = _vestIndex + 1;
         } else {
             // immediately redeem for SYK
             _redeem(msg.sender, _amount, sykAmount);
@@ -176,6 +185,7 @@ contract XStrykeToken is
     /// @inheritdoc	IXStrykeToken
     function redeem(uint256 _vestIndex) external nonReentrant {
         VestData storage _vest = vests[_vestIndex];
+        if (_vest.account != msg.sender) revert XStrykeToken_SenderNotOwner();
         if (_vest.maturity > block.timestamp) revert XStrykeToken_VestingHasNotMatured();
         if (_vest.status != VestStatus.ACTIVE) revert XStrykeToken_VestingNotActive();
 
@@ -187,6 +197,7 @@ contract XStrykeToken is
     /// @inheritdoc	IXStrykeToken
     function cancelVest(uint256 _vestIndex) external nonReentrant {
         VestData storage _vest = vests[_vestIndex];
+        if (_vest.account != msg.sender) revert XStrykeToken_SenderNotOwner();
         if (_vest.status != VestStatus.ACTIVE) revert XStrykeToken_VestingNotActive();
 
         _vest.status = VestStatus.CANCELLED;

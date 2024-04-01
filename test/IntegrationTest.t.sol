@@ -67,6 +67,7 @@ contract IntegrationTest is Test {
         StrykeTokenRoot sykImplementation = new StrykeTokenRoot();
         StrykeTokenChild sykChildImplementation = new StrykeTokenChild();
         XStrykeToken xSykImplementation = new XStrykeToken();
+        GaugeController gaugeControllerImplementation = new GaugeController();
 
         accessManagerRoot = new AccessManager(address(this));
         accessManagerBsc = new AccessManager(address(this));
@@ -119,8 +120,27 @@ contract IntegrationTest is Test {
             new XSykStaking(address(xSykRoot), address(sykRoot), address(xSykRoot), address(accessManagerRoot));
         xSykRoot.updateWhitelist(address(xSykStaking), true);
 
-        gaugeController =
-            new GaugeController(address(sykRoot), address(xSykRoot), address(xSykStaking), address(accessManagerRoot));
+        sykRoot.setInflationPerYear(1_000_000 ether);
+
+        // Move 7 days ahead in time to allow 1 week of inflation to process
+        skip(7 days);
+
+        gaugeController = GaugeController(
+            address(
+                new ERC1967Proxy(
+                    address(gaugeControllerImplementation),
+                    abi.encodeWithSelector(
+                        GaugeController.initialize.selector,
+                        address(sykRoot),
+                        address(xSykRoot),
+                        address(xSykStaking),
+                        address(accessManagerRoot)
+                    )
+                )
+            )
+        );
+
+        gaugeController.setGenesis(block.timestamp);
 
         uint64 MINTER_BURNER_SYK = 1;
 
@@ -153,6 +173,7 @@ contract IntegrationTest is Test {
         );
 
         rootEndpoint.setDestLzEndpoint(address(sykLzAdapterBsc), address(bscEndpoint));
+
         bscEndpoint.setDestLzEndpoint(address(sykLzAdapterRoot), address(rootEndpoint));
 
         xSykStakingLzAdapterRoot = new XSykStakingLzAdapter(
@@ -174,7 +195,8 @@ contract IntegrationTest is Test {
             address(xSykRoot),
             address(sykLzAdapterRoot),
             address(0),
-            30110
+            30110,
+            gaugeController.genesis()
         );
 
         gaugeControllerLzAdapterBsc = new GaugeControllerLzAdapter(
@@ -184,7 +206,8 @@ contract IntegrationTest is Test {
             address(xSykBsc),
             address(0),
             address(xSykStakingLzAdapterBsc),
-            30110
+            30110,
+            gaugeController.genesis()
         );
 
         gaugeController.updateBridgeAdapter(address(gaugeControllerLzAdapterRoot), true);
@@ -211,11 +234,6 @@ contract IntegrationTest is Test {
 
         xSykStakingLzAdapterRoot.setPeer(30102, addressToBytes32(address(xSykStakingLzAdapterBsc)));
         xSykStakingLzAdapterBsc.setPeer(30110, addressToBytes32(address(xSykStakingLzAdapterRoot)));
-
-        sykRoot.setInflationPerYear(1_000_000 ether);
-
-        // Move 7 days ahead in time to allow 1 week of inflation to process
-        skip(7 days);
     }
 
     function test_bridgeToAndFromBsc() public {
@@ -311,8 +329,6 @@ contract IntegrationTest is Test {
         bytes32 gaugeAId = gaugeController.addGauge(gaugeAInfo);
         bytes32 gaugeBId = gaugeController.addGauge(gaugeBInfo);
 
-        gaugeController.setGenesis(block.timestamp);
-
         // Mint SYK to john and doe on arbitrum
         sykRoot.mint(john.addr, 1 ether);
         sykRoot.mint(doe.addr, 2 ether);
@@ -324,6 +340,7 @@ contract IntegrationTest is Test {
             VoteParams({
                 power: 1 ether,
                 totalPower: 1 ether,
+                epoch: 0,
                 gaugeId: gaugeAId,
                 accountId: keccak256(abi.encode(42161, john.addr))
             })
@@ -337,6 +354,7 @@ contract IntegrationTest is Test {
             VoteParams({
                 power: 2 ether,
                 totalPower: 2 ether,
+                epoch: 0,
                 gaugeId: gaugeBId,
                 accountId: keccak256(abi.encode(42161, doe.addr))
             })
@@ -344,6 +362,7 @@ contract IntegrationTest is Test {
         vm.stopPrank();
 
         skip(7 days);
+        gaugeController.finalizeEpoch(0);
         gaugeA.pull(0);
         assertEq(sykRoot.balanceOf(address(this)), 433333333333333333333);
         gaugeB.pull(0);
@@ -384,8 +403,6 @@ contract IntegrationTest is Test {
         bytes32 gaugeAId = gaugeController.addGauge(gaugeAInfo);
         bytes32 gaugeBId = gaugeController.addGauge(gaugeBInfo);
 
-        gaugeController.setGenesis(block.timestamp);
-
         // Mint SYK to john on arbitrum and doe on bsc
         sykRoot.mint(john.addr, 1 ether);
         sykBsc.mint(doe.addr, 2 ether);
@@ -398,6 +415,7 @@ contract IntegrationTest is Test {
             VoteParams({
                 power: 1 ether,
                 totalPower: 1 ether,
+                epoch: gaugeController.epoch(),
                 gaugeId: gaugeAId,
                 accountId: keccak256(abi.encode(42161, john.addr))
             })
@@ -409,10 +427,12 @@ contract IntegrationTest is Test {
         sykBsc.approve(address(xSykBsc), 2 ether);
         xSykBsc.convert(2 ether, doe.addr);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-        gaugeControllerLzAdapterBsc.vote{value: 1 ether}(2 ether, gaugeBId, options);
+        MessagingFee memory _fee = gaugeControllerLzAdapterBsc.quoteVote(2 ether, gaugeBId, options, false);
+        gaugeControllerLzAdapterBsc.vote{value: _fee.nativeFee}(2 ether, gaugeBId, _fee, options);
         vm.stopPrank();
 
         skip(7 days);
+        gaugeController.finalizeEpoch(0);
 
         gaugeA.pull(0);
 
@@ -429,7 +449,13 @@ contract IntegrationTest is Test {
 
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
 
-        gaugeControllerLzAdapterBsc.pull{value: 1 ether}(address(gaugeB), 0, options);
+        _fee = gaugeControllerLzAdapterBsc.quotePull(
+            address(gaugeB), 0, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options, false
+        );
+
+        gaugeControllerLzAdapterBsc.pull{value: _fee.nativeFee}(
+            address(gaugeB), 0, _fee, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options
+        );
 
         gaugeB.pull();
 
@@ -456,18 +482,24 @@ contract IntegrationTest is Test {
         sykRoot.approve(address(xSykRoot), 1 ether);
         xSykRoot.convert(1 ether, john.addr);
         xSykRoot.approve(address(xSykStaking), 1 ether);
-        xSykStaking.stake(1 ether, john.addr);
-        assertEq(xSykStaking.balanceOf(john.addr), 1 ether);
+        xSykStaking.stake(1 ether, 42161, john.addr);
+        bytes32 johnId = keccak256(abi.encode(42161, john.addr));
+        assertEq(xSykStaking.balanceOf(johnId), 1 ether);
         vm.stopPrank();
 
         // Doe stakes from BSC
         vm.startPrank(doe.addr, doe.addr);
+        vm.chainId(56);
         sykBsc.approve(address(xSykBsc), 1 ether);
         xSykBsc.convert(1 ether, doe.addr);
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykBsc.approve(address(xSykStakingLzAdapterBsc), 1 ether);
-        xSykStakingLzAdapterBsc.stake{value: 1 ether}(1 ether, options);
-        assertEq(xSykStaking.balanceOf(doe.addr), 1 ether);
+        MessagingFee memory _fee = xSykStakingLzAdapterBsc.quote(
+            xSykStakingLzAdapterBsc.STAKE_TYPE(), 30110, 1 ether, bytes(""), options, false
+        );
+        xSykStakingLzAdapterBsc.stake{value: _fee.nativeFee}(1 ether, _fee, options);
+        bytes32 doeId = keccak256(abi.encode(56, doe.addr));
+        assertEq(xSykStaking.balanceOf(doeId), 1 ether);
         vm.stopPrank();
 
         // Skip until end of staking period
@@ -475,39 +507,68 @@ contract IntegrationTest is Test {
 
         // John unstakes and gets reward from arbitrum
         vm.startPrank(john.addr, john.addr);
-        xSykStaking.unstake(1 ether, john.addr);
+        vm.chainId(42161);
+        xSykStaking.unstake(1 ether, 42161, john.addr);
         assertEq(xSykRoot.balanceOf(john.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(john.addr), 0);
-        xSykStaking.claim(john.addr);
+        assertEq(xSykStaking.balanceOf(keccak256(abi.encode(42161, john.addr))), 0);
+        xSykStaking.claim(42161, john.addr);
         assertEq(sykRoot.balanceOf(john.addr), 174999999999999938400);
         assertEq(xSykRoot.balanceOf(john.addr), 175999999999999938400);
         vm.stopPrank();
 
-        xSykStakingLzAdapterRoot.updateXSykRewardPercentage(50);
         xSykBsc.updateContractWhitelist(address(sykLzAdapterBsc), true);
 
         // Doe unstakes and gets reward from BSC
         vm.startPrank(doe.addr, doe.addr);
-        options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-        xSykStakingLzAdapterBsc.unstake{value: 1 ether}(1 ether, options);
+        vm.chainId(56);
+        _fee = xSykStakingLzAdapterRoot.quote(
+            xSykStakingLzAdapterRoot.FINALIZE_UNSTAKE_TYPE(),
+            30102,
+            1 ether,
+            bytes(""),
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0),
+            false
+        );
+        options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, uint128(_fee.nativeFee));
+        _fee = xSykStakingLzAdapterBsc.quote(
+            xSykStakingLzAdapterBsc.UNSTAKE_TYPE(),
+            30110,
+            1 ether,
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0),
+            options,
+            false
+        );
+        xSykStakingLzAdapterBsc.unstake{value: _fee.nativeFee}(
+            1 ether, _fee, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options
+        );
         assertEq(xSykBsc.balanceOf(doe.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(doe.addr), 0);
+        assertEq(xSykStaking.balanceOf(keccak256(abi.encode(56, doe.addr))), 0);
 
-        uint256 reward = xSykStaking.earned(doe.addr);
+        uint256 reward = xSykStaking.earned(keccak256(abi.encode(56, doe.addr)));
 
         SendParams memory sendParams =
             SendParams({dstEid: 30102, to: address(doe.addr), amount: reward, options: options, xSykAmount: reward / 2});
 
         MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
-        xSykStakingLzAdapterBsc.claim{value: 1 ether}(options);
+        _fee = xSykStakingLzAdapterBsc.quote(
+            xSykStakingLzAdapterBsc.CLAIM_TYPE(),
+            30110,
+            0,
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0),
+            options,
+            false
+        );
+        xSykStakingLzAdapterBsc.claim{value: _fee.nativeFee}(
+            _fee, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options
+        );
         assertEq(sykBsc.balanceOf(doe.addr), 174999999999999938400);
         assertEq(xSykBsc.balanceOf(doe.addr), 175999999999999938400);
 
         vm.stopPrank();
     }
 
-    function test_stakingUsingExitCrossChain() public {
+    function test_stakingUsingExit() public {
         xSykStaking.setRewardsDuration(7 days);
 
         uint256 amount = 700 ether;
@@ -521,21 +582,12 @@ contract IntegrationTest is Test {
 
         // John stakes from Arbitrum
         vm.startPrank(john.addr, john.addr);
+        vm.chainId(42161);
         sykRoot.approve(address(xSykRoot), 1 ether);
         xSykRoot.convert(1 ether, john.addr);
         xSykRoot.approve(address(xSykStaking), 1 ether);
-        xSykStaking.stake(1 ether, john.addr);
-        assertEq(xSykStaking.balanceOf(john.addr), 1 ether);
-        vm.stopPrank();
-
-        // Doe stakes from BSC
-        vm.startPrank(doe.addr, doe.addr);
-        sykBsc.approve(address(xSykBsc), 1 ether);
-        xSykBsc.convert(1 ether, doe.addr);
-        bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-        xSykBsc.approve(address(xSykStakingLzAdapterBsc), 1 ether);
-        xSykStakingLzAdapterBsc.stake{value: 1 ether}(1 ether, options);
-        assertEq(xSykStaking.balanceOf(doe.addr), 1 ether);
+        xSykStaking.stake(1 ether, 42161, john.addr);
+        assertEq(xSykStaking.balanceOf(keccak256(abi.encode(42161, john.addr))), 1 ether);
         vm.stopPrank();
 
         // Skip until end of staking period
@@ -543,25 +595,12 @@ contract IntegrationTest is Test {
 
         // John exits from arbitrum
         vm.startPrank(john.addr, john.addr);
-        xSykStaking.exit(john.addr);
+        vm.chainId(42161);
+        xSykStaking.exit(42161, john.addr);
+        bytes32 johnId = keccak256(abi.encode(42161, doe.addr));
         assertEq(xSykRoot.balanceOf(john.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(john.addr), 0);
-        assertEq(sykRoot.balanceOf(john.addr), 349999999999999876800);
-        vm.stopPrank();
-
-        // Doe exits from BSC
-        vm.startPrank(doe.addr, doe.addr);
-        uint256 reward = xSykStaking.earned(doe.addr);
-        options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
-        SendParams memory sendParams =
-            SendParams({dstEid: 30102, to: address(doe.addr), amount: reward, options: options, xSykAmount: 0});
-
-        MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
-        options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
-        xSykStakingLzAdapterBsc.exit{value: 1 ether}(options);
-        assertEq(xSykBsc.balanceOf(doe.addr), 1 ether);
-        assertEq(xSykStaking.balanceOf(doe.addr), 0);
-        assertEq(sykBsc.balanceOf(doe.addr), 349999999999999876800);
+        assertEq(xSykStaking.balanceOf(johnId), 0);
+        assertEq(sykRoot.balanceOf(john.addr), 699999999999999753600);
         vm.stopPrank();
     }
 
@@ -599,8 +638,6 @@ contract IntegrationTest is Test {
         bytes32 gaugeAId = gaugeController.addGauge(gaugeAInfo);
         bytes32 gaugeBId = gaugeController.addGauge(gaugeBInfo);
 
-        gaugeController.setGenesis(block.timestamp);
-
         // Mint SYK to john on arbitrum and doe on bsc
         sykRoot.mint(john.addr, 1 ether);
         sykBsc.mint(doe.addr, 2 ether);
@@ -610,11 +647,12 @@ contract IntegrationTest is Test {
         sykRoot.approve(address(xSykRoot), 1 ether);
         xSykRoot.convert(1 ether, john.addr);
         xSykRoot.approve(address(xSykStaking), 1 ether);
-        xSykStaking.stake(1 ether, john.addr);
+        xSykStaking.stake(1 ether, 42161, john.addr);
         gaugeController.vote(
             VoteParams({
                 power: 1 ether,
                 totalPower: 1 ether,
+                epoch: 0,
                 gaugeId: gaugeAId,
                 accountId: keccak256(abi.encode(42161, john.addr))
             })
@@ -628,12 +666,17 @@ contract IntegrationTest is Test {
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         xSykBsc.approve(address(xSykStakingLzAdapterBsc), 2 ether);
-        xSykStakingLzAdapterBsc.stake{value: 1 ether}(2 ether, options);
+        MessagingFee memory _fee = xSykStakingLzAdapterBsc.quote(
+            xSykStakingLzAdapterBsc.STAKE_TYPE(), 30110, 2 ether, bytes(""), options, false
+        );
+        xSykStakingLzAdapterBsc.stake{value: _fee.nativeFee}(2 ether, _fee, options);
 
-        gaugeControllerLzAdapterBsc.vote{value: 1 ether}(2 ether, gaugeBId, options);
+        _fee = gaugeControllerLzAdapterBsc.quoteVote(2 ether, gaugeBId, options, false);
+        gaugeControllerLzAdapterBsc.vote{value: _fee.nativeFee}(2 ether, gaugeBId, _fee, options);
         vm.stopPrank();
 
         skip(7 days);
+        gaugeController.finalizeEpoch(0);
 
         gaugeA.pull(0);
 
@@ -649,8 +692,12 @@ contract IntegrationTest is Test {
         MessagingFee memory msgFee = sykLzAdapterRoot.quoteSend(sendParams, false);
 
         options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(10000000, uint128(msgFee.nativeFee));
-
-        gaugeControllerLzAdapterBsc.pull{value: 1 ether}(address(gaugeB), 0, options);
+        _fee = gaugeControllerLzAdapterBsc.quotePull(
+            address(gaugeB), 0, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options, false
+        );
+        gaugeControllerLzAdapterBsc.pull{value: _fee.nativeFee}(
+            address(gaugeB), 0, _fee, OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0), options
+        );
 
         gaugeB.pull();
 

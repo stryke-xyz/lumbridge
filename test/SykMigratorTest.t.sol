@@ -47,7 +47,7 @@ contract SykMigratorTest is Test {
         uint64 MINTER_SYK = 1;
 
         bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = bytes4(keccak256("mint(address,uint256)"));
+        selectors[0] = bytes4(keccak256("adminMint(address,uint256)"));
 
         // Set role for migrator
         accessManager.grantRole(MINTER_SYK, address(migrator), 0);

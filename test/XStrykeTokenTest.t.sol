@@ -256,4 +256,35 @@ contract XStrykeTokenTest is Test {
 
         vm.stopPrank();
     }
+
+    function test_notOwnerRedeem() public {
+        syk.mint(john.addr, 1 ether);
+
+        vm.startPrank(john.addr, john.addr);
+
+        syk.approve(address(xSyk), 1 ether);
+        xSyk.convert(1 ether, john.addr);
+        xSyk.vest(1 ether, 7 days);
+        skip(7 days);
+
+        vm.stopPrank();
+
+        vm.expectRevert(IXStrykeToken.XStrykeToken_SenderNotOwner.selector);
+        xSyk.redeem(0);
+    }
+
+    function test_notOwnerCancel() public {
+        syk.mint(john.addr, 1 ether);
+
+        vm.startPrank(john.addr, john.addr);
+
+        syk.approve(address(xSyk), 1 ether);
+        xSyk.convert(1 ether, john.addr);
+        xSyk.vest(1 ether, 7 days);
+
+        vm.stopPrank();
+
+        vm.expectRevert(IXStrykeToken.XStrykeToken_SenderNotOwner.selector);
+        xSyk.cancelVest(0);
+    }
 }

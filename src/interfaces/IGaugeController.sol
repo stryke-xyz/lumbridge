@@ -3,9 +3,9 @@ pragma solidity =0.8.23;
 
 /// @dev Struct to hold information about each gauge.
 struct GaugeInfo {
-    uint8 gaugeType;
     uint256 chainId;
     uint256 baseReward;
+    uint8 gaugeType;
     address gaugeAddress;
 }
 
@@ -13,6 +13,7 @@ struct GaugeInfo {
 struct VoteParams {
     uint256 power;
     uint256 totalPower;
+    uint256 epoch;
     bytes32 gaugeId; // keccak256(abi.encode(chainId, gauge address))
     bytes32 accountId; // keccak256(abi.encode(chainId, account address))
 }
@@ -45,6 +46,10 @@ interface IGaugeController {
 
     /// @dev Error thrown when a gauge tries to pull rewards for an epoch which already had its rewards pulled.
     error GaugeController_RewardAlreadyPulled();
+
+    error GaugeController_IncorrectEpoch();
+
+    error GaugeController_EpochNotFinalized();
 
     /// @notice Emitted when a vote is cast.
     /// @param voteParams The parameters for the vote.

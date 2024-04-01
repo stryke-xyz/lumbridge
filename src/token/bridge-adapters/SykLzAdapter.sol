@@ -2,6 +2,7 @@
 pragma solidity ^0.8.22;
 
 import {OApp} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {OAppOptionsType3} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp//libs/OAppOptionsType3.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -13,7 +14,7 @@ import {ISykLzAdapter, SendParams, Origin, MessagingFee, MessagingReceipt} from 
 /// @author witherblock
 /// @notice The Bridge Adapter that uses LayerZero to bridge tokens to different chains
 /// @dev Is permissioned by the Bridge Controller to mint and burn
-contract SykLzAdapter is ISykLzAdapter, OApp {
+contract SykLzAdapter is ISykLzAdapter, OApp, OAppOptionsType3 {
     /// @dev The SYK Bridge Controller
     ISykBridgeController public immutable sykBridgeController;
 
@@ -21,6 +22,8 @@ contract SykLzAdapter is ISykLzAdapter, OApp {
 
     /// @dev xSYK token address
     IXStrykeToken public immutable xSyk;
+
+    uint16 public constant SEND_TYPE = 0;
 
     /// @dev Constructor
     /// @param _endpoint LayerZero Endpoint address
@@ -46,7 +49,12 @@ contract SykLzAdapter is ISykLzAdapter, OApp {
         bytes memory message = abi.encode(_sendParams.to, _sendParams.amount, _sendParams.xSykAmount);
 
         // Calculates the LayerZero fee for the send() operation.
-        return _quote(_sendParams.dstEid, message, _sendParams.options, _payInLzToken);
+        return _quote(
+            _sendParams.dstEid,
+            message,
+            combineOptions(_sendParams.dstEid, SEND_TYPE, _sendParams.options),
+            _payInLzToken
+        );
     }
 
     /// @inheritdoc ISykLzAdapter
@@ -64,7 +72,13 @@ contract SykLzAdapter is ISykLzAdapter, OApp {
         bytes memory message = abi.encode(_sendParams.to, _sendParams.amount, _sendParams.xSykAmount);
 
         // Sends the message to the LayerZero endpoint and returns the LayerZero msg receipt.
-        msgReceipt = _lzSend(_sendParams.dstEid, message, _sendParams.options, _fee, _refundAddress);
+        msgReceipt = _lzSend(
+            _sendParams.dstEid,
+            message,
+            combineOptions(_sendParams.dstEid, SEND_TYPE, _sendParams.options),
+            _fee,
+            _refundAddress
+        );
 
         emit SykSent(msgReceipt, _sendParams.dstEid, _sendParams.to, _sendParams.amount);
     }
@@ -90,8 +104,10 @@ contract SykLzAdapter is ISykLzAdapter, OApp {
 
         uint256 sykAmount = amount - xSykAmount;
 
-        // Mints the SYK amount to the 'to' address
-        _credit(to, sykAmount);
+        if (sykAmount > 0) {
+            // Mints the SYK amount to the 'to' address
+            _credit(to, sykAmount);
+        }
 
         if (xSykAmount > 0) {
             _credit(address(this), xSykAmount);

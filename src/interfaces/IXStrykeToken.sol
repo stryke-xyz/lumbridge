@@ -9,7 +9,7 @@ enum VestStatus {
 }
 
 struct VestData {
-    address account; // The account participating in the vesting.
+    address account; // The account participating in the vesting (Owner of the vest).
     uint256 sykAmount; // SYK amount to be received upon vesting completion.
     uint256 xSykAmount; // xSYK amount being redeemed for SYK.
     uint256 maturity; // Timestamp when the vesting period ends.
@@ -47,6 +47,9 @@ interface IXStrykeToken {
 
     /// @dev Emitted when a transfer of xSYK is happening between non-whitelisted accounts.
     error XStrykeToken_TransferNotAllowed();
+
+    /// @dev Emitted when msg.sender is not the account owner of the vest
+    error XStrykeToken_SenderNotOwner();
 
     /// @notice  Emitted when the excess receiver is updated.
     /// @param excessReceiver The new excess receiver address
