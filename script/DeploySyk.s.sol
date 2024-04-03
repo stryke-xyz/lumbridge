@@ -12,7 +12,7 @@ import {StrykeTokenRoot} from "../src/token/StrykeTokenRoot.sol";
 contract DeploySyk is Script {
     CREATE3Factory factory;
 
-    address accessManager;
+    address accessManager = 0x91BDa4174c25EfeEF6f4e5721fa36e31e0015801;
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");

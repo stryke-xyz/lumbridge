@@ -12,8 +12,8 @@ import {XStrykeToken} from "../src/governance/XStrykeToken.sol";
 contract DeployXSyk is Script {
     CREATE3Factory factory;
 
-    address accessManager;
-    address syk;
+    address accessManager = 0x91BDa4174c25EfeEF6f4e5721fa36e31e0015801;
+    address syk = 0xACC51FFDeF63fB0c014c882267C3A17261A5eD50;
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -34,7 +34,11 @@ contract DeployXSyk is Script {
             )
         );
 
-        console.log(xsyk);
+        XStrykeToken xSyk = XStrykeToken(xsyk);
+
+        xSyk.updateExcessReceiver(0xf885390B75035e94ac72AeF3E0D0eD5ec3b85d37);
+
+        console.log(xsyk, xSyk.excessReceiver());
 
         vm.stopBroadcast();
     }

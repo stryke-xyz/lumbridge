@@ -16,7 +16,8 @@ contract DeployAccessManager is Script {
         factory = CREATE3Factory(0x9fBB3DF7C40Da2e5A0dE984fFE2CCB7C47cd0ABf);
 
         address accessManager = factory.deploy(
-            bytes32(bytes("AccessManager")), abi.encodePacked(type(AccessManager).creationCode, abi.encode(msg.sender))
+            bytes32(bytes("AccessManager")),
+            abi.encodePacked(type(AccessManager).creationCode, abi.encode(0xf885390B75035e94ac72AeF3E0D0eD5ec3b85d37))
         );
 
         console.log(accessManager);
