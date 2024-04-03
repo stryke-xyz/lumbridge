@@ -17,3 +17,9 @@ node_modules
 # Coverage files
 coverage/
 lcov.info
+
+# Local scripts
+script/SetupRoles.s.sol
+
+# Local broadcasts
+broadcast/SetupRoles.s.sol/
