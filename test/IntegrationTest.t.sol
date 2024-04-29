@@ -704,6 +704,19 @@ contract IntegrationTest is Test {
         assertEq(sykBsc.balanceOf(address(this)), 566666666666666666666);
     }
 
+    function test_recoverFromStakingContract() public {
+        vm.startPrank(john.addr);
+        vm.expectRevert();
+        xSykStaking.recoverERC20(address(sykRoot));
+        vm.stopPrank();
+
+        sykRoot.mint(address(xSykStaking), 100 ether);
+
+        xSykStaking.recoverERC20(address(sykRoot));
+
+        assertEq(sykRoot.balanceOf(address(this)), 100 ether);
+    }
+
     function addressToBytes32(address _addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(_addr)));
     }
