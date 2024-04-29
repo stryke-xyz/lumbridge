@@ -251,6 +251,13 @@ contract XSykStaking is IXSykStaking, AccessManaged {
         emit Notified(_amount, finishAt);
     }
 
+    /// @notice Performs an emergency withdraw of all tokens from the contract.
+    /// @param token The address of the token to withdraw.
+    /// @dev Only the owner can call this function.
+    function recoverERC20(address token) external restricted {
+        IERC20(token).safeTransfer(msg.sender, IERC20(token).balanceOf(address(this)));
+    }
+
     /// @dev Returns the minimum of 2 values. Private function.
     /// @param x uint256
     /// @param y uint256
