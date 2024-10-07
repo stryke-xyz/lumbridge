@@ -18,6 +18,9 @@ node_modules
 coverage/
 lcov.info
 
+# Testnet deployments
+broadcast/**/421614
+
 # Local scripts
 script/SetupRoles.s.sol
 
