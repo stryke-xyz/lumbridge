@@ -131,6 +131,8 @@ contract GaugeController is IGaugeController, Initializable, AccessManagedUpgrad
 
         id = keccak256(abi.encode(_gaugeInfo.chainId, _gaugeInfo.gaugeAddress));
 
+        if (gauges[id].gaugeAddress != address(0)) revert GaugeController_GaugeAlreadyAdded();
+
         gauges[id] = _gaugeInfo;
 
         totalBaseRewardPerEpoch += _gaugeInfo.baseReward;

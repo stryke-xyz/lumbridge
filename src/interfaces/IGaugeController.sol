@@ -38,6 +38,9 @@ interface IGaugeController {
     /// @dev Error thrown when an invalid gauge address is provided.
     error GaugeController_InvalidGauge();
 
+    /// @dev Error thrown when a gauge is already added.
+    error GaugeController_GaugeAlreadyAdded();
+
     /// @dev Error thrown when an action is attempted on a gauge that does not exist.
     error GaugeController_GaugeNotFound();
 
