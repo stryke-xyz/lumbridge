@@ -3,3 +3,11 @@ src = "src"
 out = "out"
 libs = ["lib"]
 evm_version = 'paris'
+
+# Robinhood chain supports Cancun; live tokens there (NVDA/GME) use post-paris opcodes.
+# Use for fork tests: FOUNDRY_PROFILE=cancun forge test ...
+[profile.cancun]
+src = "src"
+out = "out"
+libs = ["lib"]
+evm_version = 'cancun'

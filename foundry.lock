@@ -1,0 +1,14 @@
+{
+  "lib/create3-factory": {
+    "rev": "4de3b30f9d4ad9abd394f1b9bc7d4fe2e919f367"
+  },
+  "lib/forge-std": {
+    "rev": "ae570fec082bfe1c1f45b0acca4a2b4f84d345ce"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "01ef448981be9d20ca85f2faf6ebdf591ce409f3"
+  },
+  "lib/openzeppelin-contracts-upgradeable": {
+    "rev": "fbdb824a735891908d5588b28e0da5852d7ed7ba"
+  }
+}
