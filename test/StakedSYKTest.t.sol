@@ -26,6 +26,33 @@ contract MockERC20 is ERC20 {
     }
 }
 
+/// @notice Reward token that can revert or return false on transfer (paused / blacklisted).
+contract PausableMockERC20 is ERC20 {
+    enum Mode {
+        Ok,
+        Revert,
+        ReturnFalse
+    }
+
+    Mode public mode;
+
+    constructor() ERC20("Faulty", "FLTY") {}
+
+    function setMode(Mode m) external {
+        mode = m;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        if (mode == Mode.Revert) revert("paused");
+        if (mode == Mode.ReturnFalse) return false;
+        return super.transfer(to, amount);
+    }
+}
+
 /// @notice Unit tests: mechanics, accounting, cooldown, admin gating.
 contract StakedSYKUnitTest is Test {
     AccessManager am;
@@ -310,19 +337,181 @@ contract StakedSYKUnitTest is Test {
         vm.stopPrank();
     }
 
-    function test_recoverERC20_protectsStakeAndRewardTokens() public {
+    function test_recoverERC20_onlySurplus() public {
+        vm.prank(alice);
+        st.stake(100 ether);
+        _notify(address(stockA), 30 ether);
+
+        // nothing beyond staked principal / reserved rewards
         vm.startPrank(admin);
-        vm.expectRevert(StakedSYK.StakedSYK_TokenNotRecoverable.selector);
+        vm.expectRevert(StakedSYK.StakedSYK_InsufficientSurplus.selector);
         st.recoverERC20(address(syk), 1);
-        vm.expectRevert(StakedSYK.StakedSYK_TokenNotRecoverable.selector);
-        st.recoverERC20(address(stockA), 1);
+        uint256 stockSurplus = st.surplus(address(stockA)); // integer-rate dust only
+        vm.expectRevert(StakedSYK.StakedSYK_InsufficientSurplus.selector);
+        st.recoverERC20(address(stockA), stockSurplus + 1);
         vm.stopPrank();
+
+        // direct transfers are surplus and recoverable, principal stays
+        syk.mint(address(st), 5 ether);
+        vm.prank(admin);
+        st.recoverERC20(address(syk), 5 ether);
+        assertEq(syk.balanceOf(admin), 5 ether);
+        assertEq(syk.balanceOf(address(st)), 100 ether);
 
         MockERC20 stray = new MockERC20("Stray", "STRAY", 18);
         stray.mint(address(st), 5 ether);
         vm.prank(admin);
         st.recoverERC20(address(stray), 5 ether);
         assertEq(stray.balanceOf(admin), 5 ether);
+    }
+
+    function test_unallocated_idleStreamIsRestreamed() public {
+        _notify(address(syk), 700 ether); // nobody staked for the first half
+        skip(3.5 days);
+        assertApproxEqAbs(st.surplus(address(syk)), 350 ether, 1e6, "idle half is surplus");
+
+        vm.prank(alice);
+        st.stake(100 ether);
+        skip(3.5 days + 1);
+        assertApproxEqRel(st.earned(address(syk), alice), 350 ether, 1e12);
+
+        // stream expired; re-stream the unallocated half without new funding
+        vm.prank(admin);
+        st.notifyRewardAmount(address(syk), 0);
+        skip(7 days);
+        assertApproxEqRel(st.earned(address(syk), alice), 700 ether, 1e12, "all 700 reaches stakers");
+
+        vm.prank(alice);
+        st.claim();
+        assertApproxEqRel(syk.balanceOf(alice), 1_000_000 ether - 100 ether + 700 ether, 1e12);
+        assertLe(st.surplus(address(syk)), 1e6, "only dust left");
+    }
+
+    function test_unallocated_rolledIntoNextFundedStream() public {
+        _notify(address(stockA), 30 ether);
+        skip(30 days); // whole stream idle
+
+        vm.prank(alice);
+        st.stake(100 ether);
+        _notify(address(stockA), 30 ether); // streams new 30 + idle 30
+        skip(30 days);
+        assertApproxEqRel(st.earned(address(stockA), alice), 60 ether, 1e12);
+    }
+
+    function test_reservedNeverExceedsBalance() public {
+        vm.prank(alice);
+        st.stake(100 ether);
+        _notify(address(stockA), 30 ether);
+        skip(10 days);
+        vm.prank(alice);
+        st.initiateUnstake(100 ether); // supply 0 -> rest released
+        skip(10 days);
+        vm.prank(bob);
+        st.stake(50 ether);
+        _notify(address(stockA), 15 ether);
+        skip(40 days);
+        vm.prank(alice);
+        st.claim();
+        vm.prank(bob);
+        st.claim();
+        assertLe(st.rewardReserved(address(stockA)), stockA.balanceOf(address(st)));
+        // everything funded (45) is either paid out or still in the contract
+        assertEq(stockA.balanceOf(alice) + stockA.balanceOf(bob) + stockA.balanceOf(address(st)), 45 ether);
+    }
+
+    function test_claim_faultyRewardTokenDoesNotBlockOthers() public {
+        PausableMockERC20 faulty = new PausableMockERC20();
+        vm.prank(admin);
+        st.addReward(address(faulty), 7 days);
+
+        vm.prank(alice);
+        st.stake(100 ether);
+        _notify(address(syk), 700 ether);
+        faulty.mint(admin, 70 ether);
+        vm.startPrank(admin);
+        faulty.approve(address(st), 70 ether);
+        st.notifyRewardAmount(address(faulty), 70 ether);
+        vm.stopPrank();
+        skip(7 days);
+
+        faulty.setMode(PausableMockERC20.Mode.Revert);
+        uint256 sykBefore = syk.balanceOf(alice);
+        vm.expectEmit(true, true, false, false, address(st));
+        emit StakedSYK.RewardClaimFailed(alice, address(faulty), 0);
+        vm.prank(alice);
+        st.claim();
+        assertApproxEqRel(syk.balanceOf(alice) - sykBefore, 700 ether, 1e12, "SYK still paid");
+        assertApproxEqRel(st.rewards(address(faulty), alice), 70 ether, 1e12, "faulty reward kept owed");
+
+        // explicit per-token claims: healthy works, faulty reverts
+        address[] memory only = new address[](1);
+        only[0] = address(faulty);
+        vm.prank(alice);
+        vm.expectRevert();
+        st.claimRewards(only);
+
+        faulty.setMode(PausableMockERC20.Mode.ReturnFalse);
+        vm.prank(alice);
+        st.claim();
+        assertEq(faulty.balanceOf(alice), 0, "false return treated as failure");
+
+        faulty.setMode(PausableMockERC20.Mode.Ok);
+        vm.prank(alice);
+        st.claimRewards(only);
+        assertApproxEqRel(faulty.balanceOf(alice), 70 ether, 1e12, "paid once token recovers");
+        assertEq(st.rewards(address(faulty), alice), 0);
+    }
+
+    function test_claimRewards_unknownTokenReverts() public {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(0xDEAD);
+        vm.prank(alice);
+        vm.expectRevert(StakedSYK.StakedSYK_RewardTokenUnknown.selector);
+        st.claimRewards(tokens);
+    }
+
+    /// forge-config: default.fuzz.runs = 512
+    function testFuzz_accountingSolventAcrossRandomActions(uint256 seed) public {
+        address[2] memory users = [alice, bob];
+        for (uint256 step; step < 24; ++step) {
+            uint256 r = uint256(keccak256(abi.encode(seed, step)));
+            address user = users[r % 2];
+            uint256 action = (r >> 8) % 6;
+            uint256 amt = ((r >> 16) % 1_000 ether) + 1;
+
+            vm.startPrank(user);
+            if (action == 0) {
+                st.stake(amt);
+            } else if (action == 1 && st.balanceOf(user) > 0) {
+                st.initiateUnstake(amt % st.balanceOf(user) + 1);
+            } else if (action == 2) {
+                st.withdraw();
+            } else if (action == 3) {
+                st.claim();
+            }
+            vm.stopPrank();
+            if (action == 4) _notify(address(stockA), amt);
+            skip((r >> 32) % 5 days);
+
+            assertLe(st.rewardReserved(address(stockA)), stockA.balanceOf(address(st)), "stock insolvent");
+            assertLe(
+                st.rewardReserved(address(syk)) + st.totalSupply() + st.totalPendingUnstake(),
+                syk.balanceOf(address(st)),
+                "syk insolvent"
+            );
+        }
+
+        skip(31 days);
+        for (uint256 i; i < 2; ++i) {
+            vm.startPrank(users[i]);
+            st.claim();
+            if (st.balanceOf(users[i]) > 0) st.initiateUnstake(st.balanceOf(users[i]));
+            skip(7 days);
+            st.withdraw();
+            vm.stopPrank();
+        }
+        assertEq(st.totalSupply() + st.totalPendingUnstake(), 0);
+        assertEq(st.surplus(address(stockA)), stockA.balanceOf(address(st)) - st.rewardReserved(address(stockA)));
     }
 
     /// @dev users' principal is never claimable as rewards even if notify over-commits

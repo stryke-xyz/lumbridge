@@ -53,6 +53,9 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     mapping(address => mapping(address => uint256)) public userRewardPerTokenPaid;
     mapping(address => mapping(address => uint256)) public rewards;
 
+    /// @notice Reward tokens owed to stakers: accrued-but-unclaimed plus the unstreamed rest of the active period.
+    mapping(address => uint256) public rewardReserved;
+
     /*==== EVENTS ====*/
 
     event Staked(address indexed account, uint256 amount);
@@ -60,6 +63,7 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     event UnstakeCancelled(address indexed account, uint256 amount, uint256 index);
     event Withdrawn(address indexed account, uint256 amount);
     event RewardPaid(address indexed account, address indexed token, uint256 amount);
+    event RewardClaimFailed(address indexed account, address indexed token, uint256 amount);
     event RewardAdded(address indexed token, uint256 duration);
     event RewardsDurationSet(address indexed token, uint256 duration);
     event RewardNotified(address indexed token, uint256 amount, uint256 finishAt);
@@ -77,7 +81,7 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     error StakedSYK_RewardPeriodActive();
     error StakedSYK_RewardRateZero();
     error StakedSYK_InvalidIndex();
-    error StakedSYK_TokenNotRecoverable();
+    error StakedSYK_InsufficientSurplus();
 
     /*==== CONSTRUCTOR ====*/
 
@@ -89,17 +93,7 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     /*==== MODIFIERS ====*/
 
     modifier updateReward(address _account) {
-        uint256 len = rewardTokens.length;
-        for (uint256 i; i < len; ++i) {
-            address token = rewardTokens[i];
-            RewardData storage r = rewardData[token];
-            r.rewardPerTokenStored = rewardPerToken(token);
-            r.updatedAt = lastTimeRewardApplicable(token);
-            if (_account != address(0)) {
-                rewards[token][_account] = earned(token, _account);
-                userRewardPerTokenPaid[token][_account] = r.rewardPerTokenStored;
-            }
-        }
+        _updateRewards(_account);
         _;
     }
 
@@ -131,6 +125,20 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     function earned(address _token, address _account) public view returns (uint256) {
         return (balanceOf[_account] * (rewardPerToken(_token) - userRewardPerTokenPaid[_token][_account])) / 1e18
             + rewards[_token][_account];
+    }
+
+    /// @notice Balance of `_token` not owed to stakers: idle-stream rewards, rounding dust and direct
+    ///         transfers. Re-streamed by the next notify, or recoverable by an admin.
+    function surplus(address _token) public view returns (uint256) {
+        uint256 locked = rewardReserved[_token];
+        if (totalSupply == 0) {
+            RewardData storage r = rewardData[_token];
+            locked -= r.rewardRate * (lastTimeRewardApplicable(_token) - r.updatedAt);
+        }
+        if (_token == address(syk)) locked += totalSupply + totalPendingUnstake;
+
+        uint256 balance = IERC20(_token).balanceOf(address(this));
+        return balance > locked ? balance - locked : 0;
     }
 
     function unstakeRequests(address _account) external view returns (UnstakeRequest[] memory) {
@@ -209,17 +217,40 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
         }
     }
 
-    /// @notice Claims all accrued rewards across every reward token.
+    /// @notice Claims all accrued rewards. A reward token whose transfer fails is skipped and stays owed.
     function claim() public nonReentrant updateReward(msg.sender) {
         uint256 len = rewardTokens.length;
         for (uint256 i; i < len; ++i) {
             address token = rewardTokens[i];
             uint256 reward = rewards[token][msg.sender];
-            if (reward > 0) {
-                rewards[token][msg.sender] = 0;
-                IERC20(token).safeTransfer(msg.sender, reward);
+            if (reward == 0) continue;
+
+            rewards[token][msg.sender] = 0;
+            rewardReserved[token] -= reward;
+            if (_tryTransfer(token, msg.sender, reward)) {
                 emit RewardPaid(msg.sender, token, reward);
+            } else {
+                rewards[token][msg.sender] = reward;
+                rewardReserved[token] += reward;
+                emit RewardClaimFailed(msg.sender, token, reward);
             }
+        }
+    }
+
+    /// @notice Claims accrued rewards for the given tokens only; reverts if any transfer fails.
+    function claimRewards(address[] calldata _tokens) external nonReentrant updateReward(msg.sender) {
+        uint256 len = _tokens.length;
+        for (uint256 i; i < len; ++i) {
+            address token = _tokens[i];
+            if (rewardData[token].duration == 0) revert StakedSYK_RewardTokenUnknown();
+
+            uint256 reward = rewards[token][msg.sender];
+            if (reward == 0) continue;
+
+            rewards[token][msg.sender] = 0;
+            rewardReserved[token] -= reward;
+            IERC20(token).safeTransfer(msg.sender, reward);
+            emit RewardPaid(msg.sender, token, reward);
         }
     }
 
@@ -254,38 +285,34 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
         emit RewardsDurationSet(_token, _duration);
     }
 
-    /// @notice Pulls `_amount` of `_token` from the caller and streams it over the token's duration.
-    ///         Leftover from an active period rolls over.
+    /// @notice Pulls `_amount` of `_token` (may be 0) and streams it over the token's duration together
+    ///         with the unstreamed rest of the active period and the token's entire surplus.
     function notifyRewardAmount(address _token, uint256 _amount) external restricted updateReward(address(0)) {
         RewardData storage r = rewardData[_token];
         if (r.duration == 0) revert StakedSYK_RewardTokenUnknown();
 
-        uint256 balanceBefore = IERC20(_token).balanceOf(address(this));
-        IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
-        uint256 received = IERC20(_token).balanceOf(address(this)) - balanceBefore;
+        if (_amount > 0) IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
 
-        if (block.timestamp >= r.finishAt) {
-            r.rewardRate = received / r.duration;
-        } else {
-            uint256 remaining = (r.finishAt - block.timestamp) * r.rewardRate;
-            r.rewardRate = (received + remaining) / r.duration;
-        }
+        uint256 remaining = block.timestamp < r.finishAt ? (r.finishAt - block.timestamp) * r.rewardRate : 0;
+        uint256 rate = (remaining + surplus(_token)) / r.duration;
+        if (rate == 0) revert StakedSYK_RewardRateZero();
 
-        if (r.rewardRate == 0) revert StakedSYK_RewardRateZero();
-
+        uint256 streamed = rate * r.duration;
+        rewardReserved[_token] = rewardReserved[_token] - remaining + streamed;
+        r.rewardRate = rate;
         r.finishAt = block.timestamp + r.duration;
         r.updatedAt = block.timestamp;
 
-        emit RewardNotified(_token, received, r.finishAt);
+        emit RewardNotified(_token, streamed, r.finishAt);
     }
 
     function setCooldown(uint256 _cooldown) external restricted {
         _setCooldown(_cooldown);
     }
 
-    /// @notice Recovers stray tokens. Staking and reward tokens are not recoverable.
-    function recoverERC20(address _token, uint256 _amount) external restricted {
-        if (_token == address(syk) || rewardData[_token].duration != 0) revert StakedSYK_TokenNotRecoverable();
+    /// @notice Recovers up to the token's surplus; staked principal and rewards owed to stakers are untouchable.
+    function recoverERC20(address _token, uint256 _amount) external restricted updateReward(address(0)) {
+        if (_amount > surplus(_token)) revert StakedSYK_InsufficientSurplus();
 
         IERC20(_token).safeTransfer(msg.sender, _amount);
 
@@ -293,6 +320,45 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     }
 
     /*==== INTERNAL ====*/
+
+    function _updateRewards(address _account) internal {
+        uint256 supply = totalSupply;
+        uint256 len = rewardTokens.length;
+        for (uint256 i; i < len; ++i) {
+            address token = rewardTokens[i];
+            RewardData storage r = rewardData[token];
+
+            uint256 lastTime = lastTimeRewardApplicable(token);
+            if (lastTime > r.updatedAt) {
+                uint256 accrued = r.rewardRate * (lastTime - r.updatedAt);
+                if (supply == 0) {
+                    // nobody earned this slice: release it to surplus
+                    rewardReserved[token] -= accrued;
+                } else {
+                    r.rewardPerTokenStored += accrued * 1e18 / supply;
+                }
+                r.updatedAt = lastTime;
+            }
+
+            if (_account != address(0)) {
+                rewards[token][_account] = earned(token, _account);
+                userRewardPerTokenPaid[token][_account] = r.rewardPerTokenStored;
+            }
+        }
+    }
+
+    /// @dev Like SafeERC20.safeTransfer but returns false instead of reverting; copies at most 32 bytes of return data.
+    function _tryTransfer(address _token, address _to, uint256 _amount) internal returns (bool success) {
+        bytes memory data = abi.encodeCall(IERC20.transfer, (_to, _amount));
+        assembly ("memory-safe") {
+            success := call(gas(), _token, 0, add(data, 0x20), mload(data), 0, 0x20)
+            if success {
+                switch returndatasize()
+                case 0 { success := gt(extcodesize(_token), 0) }
+                default { success := and(gt(returndatasize(), 31), eq(mload(0), 1)) }
+            }
+        }
+    }
 
     function _setCooldown(uint256 _cooldown) internal {
         if (_cooldown > MAX_COOLDOWN) revert StakedSYK_CooldownTooLong();
