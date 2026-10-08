@@ -109,12 +109,12 @@ contract StakedSYKUnitTest is Test {
         vm.prank(alice);
         st.stake(100 ether);
         vm.prank(alice);
-        st.initiateUnstake(40 ether); // 7d cooldown
+        st.initiateUnstake(40 ether, false); // 7d cooldown
 
         vm.prank(admin);
         st.setCooldown(3 days);
         vm.prank(alice);
-        st.initiateUnstake(60 ether); // 3d cooldown
+        st.initiateUnstake(60 ether, false); // 3d cooldown
 
         StakedSYK.UnstakeRequest[] memory reqs = st.unstakeRequests(alice);
         assertEq(reqs[0].unlockAt, block.timestamp + 7 days, "old request must keep old cooldown");
@@ -138,9 +138,9 @@ contract StakedSYKUnitTest is Test {
     function test_withdraw_flow() public {
         vm.startPrank(alice);
         st.stake(100 ether);
-        st.initiateUnstake(30 ether);
+        st.initiateUnstake(30 ether, false);
         skip(1 days);
-        st.initiateUnstake(20 ether);
+        st.initiateUnstake(20 ether, false);
 
         assertEq(st.withdrawable(alice), 0);
         assertEq(st.withdraw(), 0, "nothing matured yet");
@@ -163,7 +163,7 @@ contract StakedSYKUnitTest is Test {
     function test_cancelUnstake_restakes() public {
         vm.startPrank(alice);
         st.stake(100 ether);
-        st.initiateUnstake(100 ether);
+        st.initiateUnstake(100 ether, true);
         assertEq(st.totalSupply(), 0);
 
         st.cancelUnstake(0);
@@ -171,6 +171,7 @@ contract StakedSYKUnitTest is Test {
         assertEq(st.totalSupply(), 100 ether);
         assertEq(st.totalPendingUnstake(), 0);
         assertEq(st.unstakeRequests(alice).length, 0);
+        assertEq(st.penalties(), 0, "cancelling an early request must not charge a penalty");
 
         vm.expectRevert(StakedSYK.StakedSYK_InvalidIndex.selector);
         st.cancelUnstake(0);
@@ -190,6 +191,95 @@ contract StakedSYKUnitTest is Test {
         assertEq(st.balanceOf(alice), 0);
         assertApproxEqRel(syk.balanceOf(alice) - balBefore, 700 ether, 1e15, "claim paid on exit");
         assertEq(st.unstakeRequests(alice)[0].amount, 100 ether);
+        assertEq(st.unstakeRequests(alice)[0].penaltyBps, 0, "exit must use the penalty-free path");
+    }
+
+    // ---------------- early unstake penalty ----------------
+
+    function test_earlyUnstake_threeDayCooldownWithOnePercentPenalty() public {
+        vm.startPrank(alice);
+        st.stake(100 ether);
+        st.initiateUnstake(100 ether, true);
+
+        StakedSYK.UnstakeRequest[] memory reqs = st.unstakeRequests(alice);
+        assertEq(reqs[0].unlockAt, block.timestamp + 3 days);
+        assertEq(reqs[0].penaltyBps, 100);
+
+        skip(3 days - 1);
+        assertEq(st.withdrawable(alice), 0);
+        assertEq(st.withdraw(), 0, "early cooldown must still gate withdrawal");
+
+        skip(1);
+        assertEq(st.withdrawable(alice), 99 ether, "withdrawable is net of penalty");
+        uint256 balBefore = syk.balanceOf(alice);
+        vm.expectEmit(true, false, false, true, address(st));
+        emit StakedSYK.PenaltyCharged(alice, 1 ether);
+        assertEq(st.withdraw(), 99 ether, "1% penalty charged");
+        vm.stopPrank();
+
+        assertEq(syk.balanceOf(alice) - balBefore, 99 ether);
+        assertEq(st.penalties(), 1 ether);
+        assertEq(st.totalPendingUnstake(), 0);
+    }
+
+    function test_earlyAndStandardRequestsCoexist() public {
+        vm.startPrank(alice);
+        st.stake(100 ether);
+        st.initiateUnstake(40 ether, true); // 3d, 1%
+        st.initiateUnstake(60 ether, false); // 7d, free
+
+        skip(3 days);
+        assertEq(st.withdraw(), 39.6 ether, "only the early request matured, net of 1%");
+
+        skip(4 days);
+        assertEq(st.withdraw(), 60 ether, "standard request pays in full");
+        vm.stopPrank();
+
+        assertEq(st.penalties(), 0.4 ether);
+    }
+
+    function test_claimPenalties_adminOnlyAndExactAmount() public {
+        vm.startPrank(alice);
+        st.stake(100 ether);
+        st.initiateUnstake(100 ether, true);
+        skip(3 days);
+        st.withdraw();
+
+        // non-admin cannot claim
+        vm.expectRevert(abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, alice));
+        st.claimPenalties();
+        vm.stopPrank();
+
+        vm.prank(admin);
+        vm.expectEmit(true, false, false, true, address(st));
+        emit StakedSYK.PenaltiesClaimed(admin, 1 ether);
+        st.claimPenalties();
+        assertEq(syk.balanceOf(admin), 1 ether);
+        assertEq(st.penalties(), 0);
+
+        // nothing left to claim
+        vm.prank(admin);
+        vm.expectRevert(StakedSYK.StakedSYK_AmountZero.selector);
+        st.claimPenalties();
+    }
+
+    function test_penalties_notRecoverableOrStreamableAsSurplus() public {
+        vm.startPrank(alice);
+        st.stake(100 ether);
+        st.initiateUnstake(100 ether, true);
+        skip(3 days);
+        st.withdraw();
+        vm.stopPrank();
+
+        assertEq(st.penalties(), 1 ether);
+        assertEq(st.surplus(address(syk)), 0, "penalties are not surplus");
+        vm.startPrank(admin);
+        vm.expectRevert(StakedSYK.StakedSYK_InsufficientSurplus.selector);
+        st.recoverERC20(address(syk), 1);
+        // notify(0) cannot re-stream them either
+        vm.expectRevert(StakedSYK.StakedSYK_RewardRateZero.selector);
+        st.notifyRewardAmount(address(syk), 0);
+        vm.stopPrank();
     }
 
     // ---------------- rewards ----------------
@@ -229,7 +319,7 @@ contract StakedSYKUnitTest is Test {
 
         skip(3.5 days);
         vm.prank(alice);
-        st.initiateUnstake(100 ether); // stops earning at halfway
+        st.initiateUnstake(100 ether, false); // stops earning at halfway
 
         skip(3.5 days);
         uint256 aliceEarned = st.earned(address(syk), alice);
@@ -287,6 +377,8 @@ contract StakedSYKUnitTest is Test {
         st.notifyRewardAmount(address(syk), 1 ether);
         vm.expectRevert(err);
         st.setCooldown(1 days);
+        vm.expectRevert(err);
+        st.claimPenalties();
         vm.expectRevert(err);
         st.recoverERC20(address(0xDEAD), 1);
         vm.stopPrank();
@@ -404,7 +496,7 @@ contract StakedSYKUnitTest is Test {
         _notify(address(stockA), 30 ether);
         skip(10 days);
         vm.prank(alice);
-        st.initiateUnstake(100 ether); // supply 0 -> rest released
+        st.initiateUnstake(100 ether, false); // supply 0 -> rest released
         skip(10 days);
         vm.prank(bob);
         st.stake(50 ether);
@@ -483,7 +575,7 @@ contract StakedSYKUnitTest is Test {
             if (action == 0) {
                 st.stake(amt);
             } else if (action == 1 && st.balanceOf(user) > 0) {
-                st.initiateUnstake(amt % st.balanceOf(user) + 1);
+                st.initiateUnstake(amt % st.balanceOf(user) + 1, (r >> 48) % 2 == 0);
             } else if (action == 2) {
                 st.withdraw();
             } else if (action == 3) {
@@ -495,7 +587,7 @@ contract StakedSYKUnitTest is Test {
 
             assertLe(st.rewardReserved(address(stockA)), stockA.balanceOf(address(st)), "stock insolvent");
             assertLe(
-                st.rewardReserved(address(syk)) + st.totalSupply() + st.totalPendingUnstake(),
+                st.rewardReserved(address(syk)) + st.totalSupply() + st.totalPendingUnstake() + st.penalties(),
                 syk.balanceOf(address(st)),
                 "syk insolvent"
             );
@@ -505,13 +597,21 @@ contract StakedSYKUnitTest is Test {
         for (uint256 i; i < 2; ++i) {
             vm.startPrank(users[i]);
             st.claim();
-            if (st.balanceOf(users[i]) > 0) st.initiateUnstake(st.balanceOf(users[i]));
+            if (st.balanceOf(users[i]) > 0) st.initiateUnstake(st.balanceOf(users[i]), false);
             skip(7 days);
             st.withdraw();
             vm.stopPrank();
         }
         assertEq(st.totalSupply() + st.totalPendingUnstake(), 0);
         assertEq(st.surplus(address(stockA)), stockA.balanceOf(address(st)) - st.rewardReserved(address(stockA)));
+
+        // accrued penalties stay claimable in full
+        uint256 penalties = st.penalties();
+        if (penalties > 0) {
+            vm.prank(admin);
+            st.claimPenalties();
+            assertEq(syk.balanceOf(admin), penalties);
+        }
     }
 
     /// @dev users' principal is never claimable as rewards even if notify over-commits
@@ -527,7 +627,7 @@ contract StakedSYKUnitTest is Test {
         assertGe(syk.balanceOf(address(st)), 100 ether);
 
         vm.startPrank(alice);
-        st.initiateUnstake(100 ether);
+        st.initiateUnstake(100 ether, false);
         skip(7 days);
         assertEq(st.withdraw(), 100 ether);
         vm.stopPrank();
@@ -539,7 +639,7 @@ contract StakedSYKUnitTest is Test {
 /// Run: forge test --match-contract StakedSYKRobinhoodForkTest -vv
 contract StakedSYKRobinhoodForkTest is Test {
     string constant RH_RPC = "https://rpc.mainnet.chain.robinhood.com";
-    uint256 constant PIN_BLOCK = 69174766;
+    uint256 constant PIN_BLOCK = 83318000;
 
     // live Robinhood contracts (deployed in this project)
     address constant SYK = 0x97C065EEd0309F182777BfFa41A9C0027c190DF1;
@@ -641,7 +741,7 @@ contract StakedSYKRobinhoodForkTest is Test {
         // cooldown flow with real SYK
         uint256 sykBefore = IERC20(SYK).balanceOf(alice);
         vm.startPrank(alice);
-        st.initiateUnstake(200_000 ether);
+        st.initiateUnstake(200_000 ether, false);
         assertEq(st.withdraw(), 0, "cooldown must gate withdrawal");
         skip(7 days);
         assertEq(st.withdraw(), 200_000 ether);
@@ -660,12 +760,27 @@ contract StakedSYKRobinhoodForkTest is Test {
 
         vm.startPrank(alice);
         st.stake(1_000 ether);
-        st.initiateUnstake(1_000 ether);
+        st.initiateUnstake(1_000 ether, false);
         skip(3 days - 1);
         assertEq(st.withdraw(), 0);
         skip(1);
         assertEq(st.withdraw(), 1_000 ether);
         vm.stopPrank();
+    }
+
+    function test_fork_earlyUnstakePenaltyClaimableByAdmin() public {
+        vm.startPrank(alice);
+        st.stake(1_000 ether);
+        st.initiateUnstake(1_000 ether, true);
+        skip(3 days);
+        assertEq(st.withdraw(), 990 ether, "1% penalty on early path");
+        vm.stopPrank();
+
+        uint256 adminBefore = IERC20(SYK).balanceOf(ADMIN);
+        vm.prank(ADMIN);
+        st.claimPenalties();
+        assertEq(IERC20(SYK).balanceOf(ADMIN) - adminBefore, 10 ether);
+        assertEq(st.penalties(), 0);
     }
 
     function test_fork_nonAdminCannotConfigure() public {

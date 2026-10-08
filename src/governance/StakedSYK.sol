@@ -8,8 +8,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 /// @title StakedSYK
 /// @notice Successor to xSYK/XSykStaking: stake SYK directly, earn multiple reward tokens
-///         (SYK, tokenized stocks, ...), withdraw via a configurable cooldown (hard-capped
-///         at 7 days). Pending (cooling-down) stake earns nothing.
+///         (SYK, tokenized stocks, ...), withdraw via a cooldown. Two unstake options: the
+///         standard path (configurable, hard-capped at 7 days) pays out in full; the early
+///         path (3 days) is charged a 1% penalty at withdrawal, claimable by an admin.
+///         Pending (cooling-down) stake earns nothing.
 contract StakedSYK is AccessManaged, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -26,17 +28,24 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     struct UnstakeRequest {
         uint128 amount;
         uint64 unlockAt;
+        uint32 penaltyBps;
     }
 
     /*==== STATE ====*/
 
     uint256 public constant MAX_COOLDOWN = 7 days;
+    uint256 public constant EARLY_COOLDOWN = 3 days;
+    uint256 public constant EARLY_PENALTY_BPS = 100; // 1%
+    uint256 public constant BPS = 10_000;
     uint256 public constant MAX_REWARD_TOKENS = 10;
 
     IERC20 public immutable syk;
 
-    /// @notice Current cooldown applied to new unstake requests.
+    /// @notice Current cooldown applied to new standard (penalty-free) unstake requests.
     uint256 public cooldown;
+
+    /// @notice Early-unstake penalty SYK accrued and awaiting admin claim.
+    uint256 public penalties;
 
     /// @notice Actively staked (reward-earning) total.
     uint256 public totalSupply;
@@ -59,9 +68,13 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     /*==== EVENTS ====*/
 
     event Staked(address indexed account, uint256 amount);
-    event UnstakeInitiated(address indexed account, uint256 amount, uint256 unlockAt, uint256 index);
+    event UnstakeInitiated(
+        address indexed account, uint256 amount, uint256 unlockAt, uint256 index, uint256 penaltyBps
+    );
     event UnstakeCancelled(address indexed account, uint256 amount, uint256 index);
     event Withdrawn(address indexed account, uint256 amount);
+    event PenaltyCharged(address indexed account, uint256 amount);
+    event PenaltiesClaimed(address indexed to, uint256 amount);
     event RewardPaid(address indexed account, address indexed token, uint256 amount);
     event RewardClaimFailed(address indexed account, address indexed token, uint256 amount);
     event RewardAdded(address indexed token, uint256 duration);
@@ -135,7 +148,7 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
             RewardData storage r = rewardData[_token];
             locked -= r.rewardRate * (lastTimeRewardApplicable(_token) - r.updatedAt);
         }
-        if (_token == address(syk)) locked += totalSupply + totalPendingUnstake;
+        if (_token == address(syk)) locked += totalSupply + totalPendingUnstake + penalties;
 
         uint256 balance = IERC20(_token).balanceOf(address(this));
         return balance > locked ? balance - locked : 0;
@@ -145,12 +158,15 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
         return _unstakeRequests[_account];
     }
 
-    /// @notice Amount withdrawable right now (matured cooldowns).
+    /// @notice Amount withdrawable right now (matured cooldowns), net of penalties.
     function withdrawable(address _account) public view returns (uint256 amount) {
         UnstakeRequest[] storage reqs = _unstakeRequests[_account];
         uint256 len = reqs.length;
         for (uint256 i; i < len; ++i) {
-            if (reqs[i].unlockAt <= block.timestamp) amount += reqs[i].amount;
+            if (reqs[i].unlockAt <= block.timestamp) {
+                uint256 reqAmount = reqs[i].amount;
+                amount += reqAmount - (reqAmount * reqs[i].penaltyBps) / BPS;
+            }
         }
     }
 
@@ -167,17 +183,20 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
     }
 
     /// @notice Starts the cooldown for `_amount`; it stops earning immediately.
-    function initiateUnstake(uint256 _amount) public nonReentrant updateReward(msg.sender) {
+    ///         Standard path (`_early` = false) waits `cooldown` and pays out in full; the early
+    ///         path waits EARLY_COOLDOWN and is charged EARLY_PENALTY_BPS at withdrawal.
+    function initiateUnstake(uint256 _amount, bool _early) public nonReentrant updateReward(msg.sender) {
         if (_amount == 0) revert StakedSYK_AmountZero();
 
         balanceOf[msg.sender] -= _amount;
         totalSupply -= _amount;
         totalPendingUnstake += _amount;
 
-        uint256 unlockAt = block.timestamp + cooldown;
-        _unstakeRequests[msg.sender].push(UnstakeRequest(uint128(_amount), uint64(unlockAt)));
+        uint256 unlockAt = block.timestamp + (_early ? EARLY_COOLDOWN : cooldown);
+        uint32 penaltyBps = _early ? uint32(EARLY_PENALTY_BPS) : 0;
+        _unstakeRequests[msg.sender].push(UnstakeRequest(uint128(_amount), uint64(unlockAt), penaltyBps));
 
-        emit UnstakeInitiated(msg.sender, _amount, unlockAt, _unstakeRequests[msg.sender].length - 1);
+        emit UnstakeInitiated(msg.sender, _amount, unlockAt, _unstakeRequests[msg.sender].length - 1, penaltyBps);
     }
 
     /// @notice Re-stakes a pending unstake request.
@@ -196,13 +215,17 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
         emit UnstakeCancelled(msg.sender, amount, _index);
     }
 
-    /// @notice Withdraws all matured unstake requests.
+    /// @notice Withdraws all matured unstake requests; early requests are charged their penalty.
+    /// @return amount The net amount transferred to the caller.
     function withdraw() public nonReentrant returns (uint256 amount) {
         UnstakeRequest[] storage reqs = _unstakeRequests[msg.sender];
+        uint256 penalty;
         uint256 i;
         while (i < reqs.length) {
             if (reqs[i].unlockAt <= block.timestamp) {
-                amount += reqs[i].amount;
+                uint256 reqAmount = reqs[i].amount;
+                amount += reqAmount;
+                penalty += (reqAmount * reqs[i].penaltyBps) / BPS;
                 reqs[i] = reqs[reqs.length - 1];
                 reqs.pop();
             } else {
@@ -212,6 +235,11 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
 
         if (amount > 0) {
             totalPendingUnstake -= amount;
+            if (penalty > 0) {
+                penalties += penalty;
+                amount -= penalty;
+                emit PenaltyCharged(msg.sender, penalty);
+            }
             syk.safeTransfer(msg.sender, amount);
             emit Withdrawn(msg.sender, amount);
         }
@@ -254,10 +282,10 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
         }
     }
 
-    /// @notice Claims rewards and starts the cooldown for the full staked balance.
+    /// @notice Claims rewards and starts the standard (penalty-free) cooldown for the full staked balance.
     function exit() external {
         uint256 balance = balanceOf[msg.sender];
-        if (balance > 0) initiateUnstake(balance);
+        if (balance > 0) initiateUnstake(balance, false);
         claim();
     }
 
@@ -308,6 +336,17 @@ contract StakedSYK is AccessManaged, ReentrancyGuard {
 
     function setCooldown(uint256 _cooldown) external restricted {
         _setCooldown(_cooldown);
+    }
+
+    /// @notice Sends all accrued early-unstake penalties to the caller.
+    function claimPenalties() external restricted {
+        uint256 amount = penalties;
+        if (amount == 0) revert StakedSYK_AmountZero();
+
+        penalties = 0;
+        syk.safeTransfer(msg.sender, amount);
+
+        emit PenaltiesClaimed(msg.sender, amount);
     }
 
     /// @notice Recovers up to the token's surplus; staked principal and rewards owed to stakers are untouchable.
